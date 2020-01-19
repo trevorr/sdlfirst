@@ -1,0 +1,91 @@
+{
+  "name": "sdlfirst",
+  "version": "0.0.1",
+  "description": "GraphQL SDL-first Tools",
+  "keywords": [
+    "graphql",
+    "sdl",
+    "typescript"
+  ],
+  "homepage": "https://github.com/trevorr/sdlfirst",
+  "bugs": "https://github.com/trevorr/sdlfirst/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/trevorr/sdlfirst.git"
+  },
+  "license": "ISC",
+  "author": "Trevor Robinson",
+  "files": [
+    "bin",
+    "dist",
+    "oclif.manifest.json"
+  ],
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "sdlfirst": "./bin/run"
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc --project src",
+    "lint": "eslint 'src/**/*.ts'",
+    "prepack": "oclif-dev manifest && oclif-dev readme",
+    "postpack": "rm -f oclif.manifest.json",
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run lint && npm run test",
+    "prettier": "prettier --write src/**/*",
+    "start": "ts-node src/index.ts",
+    "test": "nyc --extension .ts mocha --forbid-only \"test/**/*.test.ts\"",
+    "posttest": "npm run lint",
+    "version": "oclif-dev readme && git add README.md"
+  },
+  "prettier": {
+    "printWidth": 120,
+    "semi": true,
+    "singleQuote": true
+  },
+  "dependencies": {
+    "@graphql-codegen/core": "^1.10.0",
+    "@graphql-codegen/typescript": "^1.10.0",
+    "@oclif/command": "^1.5.19",
+    "@oclif/config": "^1.13.3",
+    "@oclif/plugin-help": "^2.2.3",
+    "@types/prettier": "^1.19.0",
+    "diff": "^4.0.1",
+    "graphql": "^14.5.8",
+    "graphql-import": "^0.7.1",
+    "pascal-case": "^3.1.1",
+    "prettier": "^1.19.1",
+    "snake-case": "^3.0.3",
+    "tslib": "^1.10.0",
+    "typescript": "^3.7.4",
+    "typescript-memoize": "^1.0.0-alpha.3"
+  },
+  "devDependencies": {
+    "@oclif/dev-cli": "^1.22.2",
+    "@oclif/test": "^1.2.5",
+    "@types/chai": "^4.2.7",
+    "@types/diff": "^4.0.2",
+    "@types/mocha": "^5.2.7",
+    "@types/node": "^12.12.24",
+    "@typescript-eslint/eslint-plugin": "^2.14.0",
+    "@typescript-eslint/parser": "^2.14.0",
+    "chai": "^4.2.0",
+    "eslint": "^6.8.0",
+    "eslint-config-oclif": "^3.1.0",
+    "eslint-config-oclif-typescript": "^0.1.0",
+    "globby": "^10.0.1",
+    "mocha": "^6.2.2",
+    "nyc": "^15.0.0",
+    "ts-node": "^8.5.4"
+  },
+  "engines": {
+    "node": ">=12.0.0"
+  },
+  "oclif": {
+    "commands": "./dist/commands",
+    "bin": "sdlfirst",
+    "plugins": [
+      "@oclif/plugin-help"
+    ]
+  }
+}

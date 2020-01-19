@@ -1,0 +1,20 @@
+parser: "@typescript-eslint/parser"
+extends:
+  - "plugin:@typescript-eslint/recommended"
+parserOptions:
+  ecmaVersion: 2018
+  sourceType: module
+rules:
+  "@typescript-eslint/camelcase": off
+  "@typescript-eslint/explicit-function-return-type": ["error", { "allowExpressions": true }]
+  "@typescript-eslint/no-empty-interface": off
+  "@typescript-eslint/no-explicit-any": off
+  "@typescript-eslint/no-non-null-assertion": off
+  "@typescript-eslint/no-parameter-properties": off
+  "@typescript-eslint/no-use-before-define": ["error", { "functions": false }]
+  "@typescript-eslint/no-unused-vars":
+    - error
+    - ignoreRestSiblings: true
+      argsIgnorePattern: "^_"
+  prefer-const: ["error", { "destructuring": "all" }]
+  quotes: ["error", "single", { "avoidEscape": true }]

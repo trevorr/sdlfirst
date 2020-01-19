@@ -1,0 +1,6 @@
+*-debug.log
+*-error.log
+*.tgz
+/.nyc_output
+dist/
+node_modules/
