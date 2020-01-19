@@ -1,6 +1,7 @@
 import {
   assertScalarType,
   getNullableType,
+  GraphQLBoolean,
   GraphQLField,
   GraphQLFieldConfig,
   GraphQLInputFieldConfig,
@@ -78,14 +79,16 @@ export class MutationBuilder {
           fields.push([
             `create${type.name}`,
             {
-              type: new GraphQLObjectType({
-                name: `Create${type.name}Payload`,
-                description: `Automatically generated output type for ${this.mutationTypeName}.create${type.name}`,
-                fields: {
-                  [CLIENT_MUTATION_ID]: { type: GraphQLString },
-                  [lcFirst(type.name)]: { type }
-                }
-              }),
+              type: new GraphQLNonNull(
+                new GraphQLObjectType({
+                  name: `Create${type.name}Payload`,
+                  description: `Automatically generated output type for ${this.mutationTypeName}.create${type.name}`,
+                  fields: {
+                    [CLIENT_MUTATION_ID]: { type: GraphQLString },
+                    [lcFirst(type.name)]: { type: new GraphQLNonNull(type) }
+                  }
+                })
+              ),
               args: { input: { type: new GraphQLNonNull(createType) } }
             }
           ]);
@@ -96,14 +99,16 @@ export class MutationBuilder {
           fields.push([
             `update${type.name}`,
             {
-              type: new GraphQLObjectType({
-                name: `Update${type.name}Payload`,
-                description: `Automatically generated output type for ${this.mutationTypeName}.update${type.name}`,
-                fields: {
-                  [CLIENT_MUTATION_ID]: { type: GraphQLString },
-                  [lcFirst(type.name)]: { type }
-                }
-              }),
+              type: new GraphQLNonNull(
+                new GraphQLObjectType({
+                  name: `Update${type.name}Payload`,
+                  description: `Automatically generated output type for ${this.mutationTypeName}.update${type.name}`,
+                  fields: {
+                    [CLIENT_MUTATION_ID]: { type: GraphQLString },
+                    [lcFirst(type.name)]: { type: new GraphQLNonNull(type) }
+                  }
+                })
+              ),
               args: { input: { type: new GraphQLNonNull(updateType) } }
             }
           ]);
@@ -114,13 +119,16 @@ export class MutationBuilder {
           fields.push([
             `delete${type.name}`,
             {
-              type: new GraphQLObjectType({
-                name: `Delete${type.name}Payload`,
-                description: `Automatically generated output type for ${this.mutationTypeName}.delete${type.name}`,
-                fields: {
-                  [CLIENT_MUTATION_ID]: { type: GraphQLString }
-                }
-              }),
+              type: new GraphQLNonNull(
+                new GraphQLObjectType({
+                  name: `Delete${type.name}Payload`,
+                  description: `Automatically generated output type for ${this.mutationTypeName}.delete${type.name}`,
+                  fields: {
+                    [CLIENT_MUTATION_ID]: { type: GraphQLString },
+                    deleted: { type: new GraphQLNonNull(GraphQLBoolean) }
+                  }
+                })
+              ),
               args: { input: { type: new GraphQLNonNull(deleteType) } }
             }
           ]);
