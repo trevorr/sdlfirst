@@ -228,6 +228,10 @@ export class SqlSchemaBuilder {
   }
 
   private emitColumnsForField(mapping: TableMapping, typeInfo: TypeInfo<TableType>, field: FieldType): SqlColumn[] {
+    if (hasDirective(field, this.config.derivedDirective)) {
+      return [];
+    }
+
     let fieldType = field.type;
     let notNull = false;
     if (isNonNullType(fieldType)) {

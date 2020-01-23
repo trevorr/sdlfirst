@@ -4,6 +4,7 @@ export interface DirectiveConfig {
   createNestedDirective: string;
   defaultDirective: string;
   deleteDirective: string;
+  derivedDirective: string;
   externalIdDirective: string;
   generatedDefaultDirective: string;
   immutableDirective: string;
@@ -31,6 +32,7 @@ export const defaultConfig: DirectiveConfig = {
   createNestedDirective: 'createNested',
   defaultDirective: 'default',
   deleteDirective: 'delete',
+  derivedDirective: 'derived',
   externalIdDirective: 'xid',
   generatedDefaultDirective: 'generatedDefault',
   immutableDirective: 'immutable',

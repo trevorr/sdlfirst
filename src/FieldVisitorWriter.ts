@@ -16,7 +16,7 @@ import { defaultConfig as defaultSqlConfig, SqlConfig } from './config/SqlConfig
 import { SqlColumn } from './model/SqlColumn';
 import { SqlTable } from './model/SqlTable';
 import { FieldColumns, FieldJoin, isColumns, isJoin, SqlSchemaMappings, TypeTable } from './SqlSchemaBuilder';
-import { findFirstDirective } from './util/ast-util';
+import { hasDirective } from './util/ast-util';
 import { compare } from './util/compare';
 import { mkdir } from './util/fs-util';
 import { defaultConfig as defaultFormatterConfig, TsFormatter, TsFormatterConfig } from './util/TsFormatter';
@@ -133,14 +133,22 @@ export class FieldVisitorWriter {
 
       const fieldMapping = fieldMappings.get(field);
       const fieldType = getNullableType(field.type);
-      if (isScalarType(fieldType)) {
+      if (hasDirective(field, this.config.derivedDirective)) {
+        body.push(
+          ts.createThrow(
+            ts.createNew(ts.createIdentifier('Error'), undefined, [
+              ts.createStringLiteral(`TODO: return derived field ${type.name}.${field.name}`)
+            ])
+          )
+        );
+      } else if (isScalarType(fieldType)) {
         if (!fieldMapping || !isColumns(fieldMapping)) {
-          throw new Error(`Column expected for scalar field "${field.name}"`);
+          throw new Error(`Column expected for scalar field "${type.name}.${field.name}"`);
         }
         body.push(ts.createReturn(this.addVisitorColumnField(fieldMapping.columns[0].name, table.name)));
       } else if (isEnumType(fieldType)) {
         if (!fieldMapping || !isColumns(fieldMapping)) {
-          throw new Error(`Column expected for scalar field "${field.name}"`);
+          throw new Error(`Column expected for enum field "${type.name}.${field.name}"`);
         }
         const id = pascalCase(fieldType.name);
         const fromSqlId = module.addNamedImport(
@@ -271,7 +279,7 @@ export class FieldVisitorWriter {
               );
               resultExpr = this.addUnionField(joinSpecs);
             } else {
-              assert(findFirstDirective(fieldType, this.config.sqlTypeDirective));
+              assert(hasDirective(fieldType, this.config.sqlTypeDirective));
               resultExpr = this.addObjectField();
             }
           }

@@ -436,6 +436,7 @@ export class MutationBuilder {
   private getReadonlyDirectives(): Set<string> {
     return new Set([
       this.config.createdAtDirective,
+      this.config.derivedDirective,
       this.config.externalIdDirective,
       this.config.internalIdDirective,
       this.config.readonlyDirective,
