@@ -28,8 +28,8 @@ const SqlQueryResolverType = 'SqlQueryResolver';
 const VisitorsConst = 'Visitors';
 
 export interface FieldVisitorConfig extends SqlConfig, TsFormatterConfig {
-  gqlsqlTypesNamespace: string;
-  gqlsqlTypesModule: string;
+  gqlsqlNamespace: string;
+  gqlsqlModule: string;
   contextArgName: string;
   infoArgName: string;
   visitorsArgName: string;
@@ -38,8 +38,8 @@ export interface FieldVisitorConfig extends SqlConfig, TsFormatterConfig {
 export const defaultConfig: FieldVisitorConfig = {
   ...defaultSqlConfig,
   ...defaultFormatterConfig,
-  gqlsqlTypesNamespace: 'gqlsql',
-  gqlsqlTypesModule: 'gqlsql',
+  gqlsqlNamespace: 'gqlsql',
+  gqlsqlModule: 'gqlsql',
   contextArgName: 'context',
   infoArgName: 'info',
   visitorsArgName: 'visitors'
@@ -63,7 +63,7 @@ export class FieldVisitorWriter {
   ) {
     this.config = Object.freeze(Object.assign({}, defaultConfig, analyzer.getConfig(), config));
 
-    this.gqlsqlNamespaceId = ts.createIdentifier(this.config.gqlsqlTypesNamespace);
+    this.gqlsqlNamespaceId = ts.createIdentifier(this.config.gqlsqlNamespace);
 
     this.formatter = new TsFormatter(config);
   }
@@ -96,9 +96,9 @@ export class FieldVisitorWriter {
 
     const module = new TsModule();
 
-    const { gqlsqlTypesModule, gqlsqlTypesNamespace } = this.config;
-    if (gqlsqlTypesModule && gqlsqlTypesNamespace) {
-      module.addNamespaceImport(gqlsqlTypesModule, gqlsqlTypesNamespace);
+    const { gqlsqlModule: gqlsqlModule, gqlsqlNamespace: gqlsqlNamespace } = this.config;
+    if (gqlsqlModule && gqlsqlNamespace) {
+      module.addNamespaceImport(gqlsqlModule, gqlsqlNamespace);
     }
 
     const typeInfo = this.analyzer.getTypeInfo(tableMapping.type);

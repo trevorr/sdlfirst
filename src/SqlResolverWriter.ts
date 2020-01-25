@@ -1,24 +1,34 @@
 import {
+  DirectiveNode,
   getNamedType,
   getNullableType,
+  GraphQLCompositeType,
+  GraphQLInputField,
+  GraphQLInputObjectType,
   GraphQLInterfaceType,
   GraphQLNamedType,
   GraphQLObjectType,
   GraphQLOutputType,
   GraphQLSchema,
+  IntValueNode,
+  isCompositeType,
   isEnumType,
+  isInputObjectType,
   isInterfaceType,
   isListType,
   isNonNullType,
   isObjectType,
   isScalarType,
-  isUnionType
+  isUnionType,
+  StringValueNode
 } from 'graphql';
 import path from 'path';
 import ts from 'typescript';
 import { Analyzer, FieldType } from './Analyzer';
+import { defaultConfig as defaultDirectiveConfig, DirectiveConfig } from './config/DirectiveConfig';
 import { defaultConfig as defaultPathConfig, PathConfig } from './config/PathConfig';
 import { SqlSchemaMappings, TypeTable } from './SqlSchemaBuilder';
+import { findFirstDirective, getDirectiveArgument, getRequiredDirectiveArgument } from './util/ast-util';
 import { compare } from './util/compare';
 import { mkdir } from './util/fs-util';
 import { defaultConfig as defaultFormatterConfig, TsFormatter, TsFormatterConfig } from './util/TsFormatter';
@@ -30,11 +40,15 @@ const PartialType = 'Partial';
 const PromiseType = 'Promise';
 const ScalarsType = 'Scalars';
 
-export interface SqlResolverConfig extends PathConfig, TsFormatterConfig {
+export interface SqlResolverConfig extends DirectiveConfig, PathConfig, TsFormatterConfig {
   includeRootTypes: boolean;
   splitRootMembers: boolean;
   includeUserTypes: boolean;
   includeInterfaces: boolean;
+  gqlsqlNamespace: string;
+  gqlsqlModule: string;
+  tsfvBinding: string;
+  tsfvModule: string;
   schemaTypesNamespace?: string;
   schemaTypesModule?: string;
   parentArgName: string;
@@ -50,6 +64,7 @@ export interface SqlResolverConfig extends PathConfig, TsFormatterConfig {
 }
 
 export const defaultConfig: SqlResolverConfig = {
+  ...defaultDirectiveConfig,
   ...defaultPathConfig,
   ...defaultFormatterConfig,
   usePrettier: true,
@@ -57,6 +72,10 @@ export const defaultConfig: SqlResolverConfig = {
   splitRootMembers: true,
   includeUserTypes: false,
   includeInterfaces: false,
+  gqlsqlNamespace: 'gqlsql',
+  gqlsqlModule: 'gqlsql',
+  tsfvBinding: 'tsfv',
+  tsfvModule: 'tsfv',
   schemaTypesNamespace: 'schema',
   schemaTypesModule: '../types',
   parentArgName: 'parent',
@@ -74,6 +93,11 @@ export const defaultConfig: SqlResolverConfig = {
 interface ResolverInfo {
   id: string;
   path: string;
+}
+
+enum RootType {
+  Query = 1,
+  Mutation = 2
 }
 
 export class SqlResolverWriter {
@@ -111,11 +135,11 @@ export class SqlResolverWriter {
     await mkdir(path.join(baseDir, resolversDir), { recursive: true });
     const queryType = this.schema.getQueryType();
     if (queryType != null) {
-      await this.writeResolver(queryType, true);
+      await this.writeResolver(queryType, RootType.Query);
     }
     const mutationType = this.schema.getMutationType();
     if (mutationType != null) {
-      await this.writeResolver(mutationType, true);
+      await this.writeResolver(mutationType, RootType.Mutation);
     }
     const files = this.resolvers.map(r => r.path).concat(this.methodResolvers.map(r => r.path));
     if (this.resolvers.length > 0) {
@@ -126,7 +150,7 @@ export class SqlResolverWriter {
     return files;
   }
 
-  private async writeResolver(type: GraphQLNamedType, rootType = false): Promise<void> {
+  private async writeResolver(type: GraphQLNamedType, rootType?: RootType): Promise<void> {
     if (!this.resolvedTypes.has(type)) {
       this.resolvedTypes.add(type);
       if (isObjectType(type)) {
@@ -153,7 +177,7 @@ export class SqlResolverWriter {
     }
   }
 
-  private async writeObjectResolver(type: GraphQLObjectType, rootType: boolean): Promise<void> {
+  private async writeObjectResolver(type: GraphQLObjectType, rootType?: RootType): Promise<void> {
     const fields = Object.values(type.getFields());
     if (rootType && this.config.splitRootMembers) {
       const methodResolvers = [];
@@ -177,7 +201,7 @@ export class SqlResolverWriter {
   private async writeResolverForFields(
     sourcePath: string,
     type: GraphQLObjectType,
-    rootType: boolean,
+    rootType: RootType | undefined,
     fields: FieldType[]
   ): Promise<void> {
     const module = new TsModule();
@@ -227,7 +251,55 @@ export class SqlResolverWriter {
       const returnType = ts.createTypeReferenceNode(PromiseType, [await this.getFieldReturnType(field.type)]);
       let statements: ts.Statement[] = [];
       const fieldType = getNamedType(field.type);
-      if (this.analyzer.isConnectionType(fieldType)) {
+      let inputType;
+      if (rootType === RootType.Mutation && (inputType = this.getMutationInputType(field))) {
+        const targetType = this.getMutationTargetType(field);
+        switch (field.name.substring(0, 6)) {
+          case 'create':
+            if (targetType) {
+              statements.push(this.destructureInput(argsId, inputType, module));
+              statements.push(...this.validateInput(inputType, targetType, module));
+              // TODO: perform insert(s), obtain internal ID
+              // TODO: query result
+              statements.push(
+                ts.createThrow(
+                  ts.createNew(ts.createIdentifier('Error'), undefined, [
+                    ts.createStringLiteral(`TODO: implement resolver for ${type.name}.${field.name}`)
+                  ])
+                )
+              );
+            }
+            break;
+          case 'update':
+            if (targetType) {
+              statements.push(this.destructureInput(argsId, inputType, module));
+              // TODO: ensure at least one defined field
+              statements.push(...this.validateInput(inputType, targetType, module));
+              // TODO: perform update(s), obtain internal ID
+              // TODO: query result
+              statements.push(
+                ts.createThrow(
+                  ts.createNew(ts.createIdentifier('Error'), undefined, [
+                    ts.createStringLiteral(`TODO: implement resolver for ${type.name}.${field.name}`)
+                  ])
+                )
+              );
+            }
+            break;
+          case 'delete':
+            statements.push(this.destructureInput(argsId, inputType, module));
+            // TODO: delete object(s), if exist
+            // TODO: return mutation ID and deleted flag
+            statements.push(
+              ts.createThrow(
+                ts.createNew(ts.createIdentifier('Error'), undefined, [
+                  ts.createStringLiteral(`TODO: implement resolver for ${type.name}.${field.name}`)
+                ])
+              )
+            );
+            break;
+        }
+      } else if (this.analyzer.isConnectionType(fieldType)) {
         const nodeType = this.analyzer.getNodeTypeForConnection(fieldType as GraphQLObjectType);
         if (isObjectType(nodeType) || isInterfaceType(nodeType)) {
           const tableMapping = this.sqlMappings.getIdentityTableForType(nodeType);
@@ -281,6 +353,142 @@ export class SqlResolverWriter {
     module.addStatement(ts.createExportDefault(ts.createObjectLiteral(properties, true)));
 
     await module.write(sourcePath, this.formatter);
+  }
+
+  private getMutationInputType(field: FieldType): GraphQLInputObjectType | null {
+    if (field.args.length === 1) {
+      const [arg] = field.args;
+      const argType = getNullableType(arg.type);
+      if (arg.name === 'input' && isNonNullType(arg.type) && isInputObjectType(argType)) {
+        return argType;
+      }
+    }
+    return null;
+  }
+
+  private getMutationTargetType(field: FieldType): GraphQLCompositeType | null {
+    const fieldType = getNullableType(field.type);
+    if (isObjectType(fieldType)) {
+      const typeName = field.name.substring(6); // createFoo -> Foo
+      for (const payloadField of Object.values(fieldType.getFields())) {
+        const payloadFieldType = getNullableType(payloadField.type);
+        if (isCompositeType(payloadFieldType) && payloadFieldType.name === typeName) {
+          return payloadFieldType;
+        }
+      }
+    }
+    return null;
+  }
+
+  private destructureInput(argsId: ts.Identifier, inputType: GraphQLInputObjectType, module: TsModule): ts.Statement {
+    return ts.createVariableStatement(
+      undefined,
+      ts.createVariableDeclarationList(
+        [
+          ts.createVariableDeclaration(
+            ts.createObjectBindingPattern(
+              Object.values(inputType.getFields()).map(field => module.createBindingElement(field.name, field))
+            ),
+            undefined,
+            ts.createPropertyAccess(argsId, 'input')
+          )
+        ],
+        ts.NodeFlags.Const
+      )
+    );
+  }
+
+  private validateInput(
+    inputType: GraphQLInputObjectType,
+    targetType: GraphQLCompositeType,
+    module: TsModule,
+    getFieldRef: (field: GraphQLInputField) => ts.Expression = field => module.createIdentifier(field.name, field)
+  ): ts.Statement[] {
+    const statements: ts.Statement[] = [];
+    if (isUnionType(targetType)) {
+      targetType = targetType.getTypes()[0];
+    }
+    const targetFields = targetType.getFields();
+    const tsfvId = ts.createIdentifier(this.config.tsfvBinding);
+    for (const field of Object.values(inputType.getFields())) {
+      const fieldType = getNullableType(field.type);
+      const optional = !isNonNullType(field.type);
+      let expr: ts.Expression = tsfvId;
+      if (isScalarType(fieldType)) {
+        const targetField = targetFields[field.name] || field;
+        switch (fieldType.name) {
+          case 'ID':
+            const sidDir = findFirstDirective(targetField, this.config.stringIdDirective);
+            const xidDir = findFirstDirective(targetField, this.config.externalIdDirective);
+            expr = getRangeValidator(expr, sidDir || xidDir, 'string', {
+              betweenMethod: 'length',
+              minMethod: 'minLength',
+              maxMethod: 'maxLength',
+              maxArgName: 'maxLength',
+              defaultMin: '1',
+              defaultMax: xidDir ? '26' : undefined
+            });
+            break;
+          case 'String':
+            const lengthDir = findFirstDirective(targetField, this.config.lengthDirective);
+            expr = getRangeValidator(expr, lengthDir, 'string', {
+              betweenMethod: 'length',
+              minMethod: 'minLength',
+              maxMethod: 'maxLength',
+              defaultMin: '1'
+            });
+            const regexDir = findFirstDirective(targetField, this.config.regexDirective);
+            if (regexDir) {
+              const valueArg = getRequiredDirectiveArgument(regexDir, 'value', 'StringValue');
+              expr = ts.createCall(ts.createPropertyAccess(expr, 'pattern'), undefined, [
+                ts.createRegularExpressionLiteral('/' + (valueArg.value as StringValueNode).value + '/')
+              ]);
+            }
+            break;
+          case 'Float':
+            const floatRangeDir = findFirstDirective(targetField, this.config.floatRangeDirective);
+            expr = getRangeValidator(expr, floatRangeDir, 'number');
+            break;
+          case 'Int':
+            const intRangeDir = findFirstDirective(targetField, this.config.intRangeDirective);
+            expr = getRangeValidator(expr, intRangeDir, 'integer');
+            break;
+        }
+        if (expr !== tsfvId) {
+          if (optional) {
+            expr = ts.createCall(ts.createPropertyAccess(expr, 'optional'), undefined, undefined);
+          }
+          statements.push(
+            ts.createExpressionStatement(
+              ts.createCall(ts.createPropertyAccess(expr, 'check'), undefined, [
+                getFieldRef(field),
+                ts.createStringLiteral(field.name)
+              ])
+            )
+          );
+        }
+      } else if (isInputObjectType(fieldType)) {
+        const targetField = targetFields[field.name];
+        if (targetField) {
+          const targetType = getNullableType(targetField.type);
+          if (isCompositeType(targetType)) {
+            const fieldRef = getFieldRef(field);
+            const nestedStatements = this.validateInput(fieldType, targetType, module, field =>
+              ts.createPropertyAccess(fieldRef, module.createIdentifier(field.name, field))
+            );
+            if (optional) {
+              statements.push(ts.createIf(fieldRef, ts.createBlock(nestedStatements, true)));
+            } else {
+              statements.push(...nestedStatements);
+            }
+          }
+        }
+      }
+    }
+    if (statements.length > 0) {
+      module.addImport(this.config.tsfvModule, this.config.tsfvBinding);
+    }
+    return statements;
   }
 
   private buildConnectionResolver(
@@ -517,4 +725,62 @@ export class SqlResolverWriter {
 
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.substring(1);
+}
+
+interface RangeValidatorOptions {
+  betweenMethod: string;
+  minMethod: string;
+  maxMethod: string;
+  minArgName: string;
+  maxArgName: string;
+  defaultMin?: string;
+  defaultMax?: string;
+}
+
+const defaultRangeValidatorOptions: RangeValidatorOptions = {
+  betweenMethod: 'between',
+  minMethod: 'greaterThanOrEqual',
+  maxMethod: 'lessThanOrEqual',
+  minArgName: 'min',
+  maxArgName: 'max'
+};
+
+function getRangeValidator(
+  expr: ts.Expression,
+  directive: DirectiveNode | undefined,
+  typeMethod: string,
+  options?: Partial<RangeValidatorOptions>
+): ts.Expression {
+  const opts = Object.assign({}, defaultRangeValidatorOptions, options);
+  if (directive) {
+    let min = opts.defaultMin;
+    let max = opts.defaultMax;
+    const minArg = getDirectiveArgument(directive, opts.minArgName);
+    if (minArg) {
+      min = (minArg.value as IntValueNode).value;
+    }
+    const maxArg = getDirectiveArgument(directive, opts.maxArgName);
+    if (maxArg) {
+      max = (maxArg.value as IntValueNode).value;
+    }
+    let method, params;
+    if (min != null && max != null) {
+      method = opts.betweenMethod;
+      params = [min, max];
+    } else if (min != null) {
+      method = opts.minMethod;
+      params = [min];
+    } else if (max != null) {
+      method = opts.maxMethod;
+      params = [max];
+    }
+    if (method && params) {
+      expr = ts.createCall(
+        ts.createPropertyAccess(ts.createCall(ts.createPropertyAccess(expr, typeMethod), undefined, undefined), method),
+        undefined,
+        params.map(v => ts.createNumericLiteral(v))
+      );
+    }
+  }
+  return expr;
 }

@@ -10,15 +10,15 @@ import { defaultConfig as defaultFormatterConfig, TsFormatter, TsFormatterConfig
 import { TsModule } from './util/TsModule';
 
 export interface SqlMetadataConfig extends PathConfig, TsFormatterConfig {
-  gqlsqlTypesNamespace: string;
-  gqlsqlTypesModule: string;
+  gqlsqlNamespace: string;
+  gqlsqlModule: string;
 }
 
 export const defaultConfig: SqlMetadataConfig = {
   ...defaultPathConfig,
   ...defaultFormatterConfig,
-  gqlsqlTypesNamespace: 'gqlsql',
-  gqlsqlTypesModule: 'gqlsql'
+  gqlsqlNamespace: 'gqlsql',
+  gqlsqlModule: 'gqlsql'
 };
 
 interface MetaInfo {
@@ -61,8 +61,8 @@ export class SqlMetadataWriter {
     const module = new TsModule();
     const propMap: Record<string, ts.Expression> = {};
 
-    const { gqlsqlTypesModule, gqlsqlTypesNamespace } = this.config;
-    const gqlsql = module.addNamespaceImport(gqlsqlTypesModule, gqlsqlTypesNamespace);
+    const { gqlsqlModule, gqlsqlNamespace } = this.config;
+    const gqlsql = module.addNamespaceImport(gqlsqlModule, gqlsqlNamespace);
     let tsType;
 
     const { type, tableIds } = typeInfo;

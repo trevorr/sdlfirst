@@ -57,6 +57,9 @@ export interface TypeInfo<T = AnalyzedType> {
   // field with @sid or @xid directive, if any
   externalIdField?: FieldType;
 
+  // @sid or @xid directive of external ID field, if any
+  externalIdDirective?: DirectiveNode;
+
   // field used to determine concrete type of interface
   typeDiscriminatorField?: FieldType;
 
@@ -258,6 +261,7 @@ export class Analyzer {
           throw new Error(`Duplicate external ID field: ${type.name}.${field.name}`);
         }
         typeInfo.externalIdField = field;
+        typeInfo.externalIdDirective = xidDir || sidDir;
         foundId = true;
       }
       if (foundId) {

@@ -3,6 +3,7 @@ import ts from 'typescript';
 import util from 'util';
 import { compare } from './compare';
 import { TsFormatter } from './TsFormatter';
+import { TsNamer } from './TsNamer';
 
 const writeFile = util.promisify(fs.writeFile);
 
@@ -18,23 +19,27 @@ interface ImportedModule {
   namespaceId?: ts.Identifier;
 }
 
-export class TsModule {
-  private readonly identifiers = new Map<string, ts.Identifier>();
+export class TsModule extends TsNamer {
   private readonly modules = new Map<string, ImportedModule>();
   private readonly statements: ts.Statement[] = [];
 
   public addImport(module: string, binding: string): ts.Identifier {
-    return this.addIdentifier(binding, () => {
+    const purpose = `${module}.default`;
+    let id = this.findIdentifierFor(purpose);
+    if (!id) {
       const m = this.addModule(module);
       if (!m.id) {
-        m.id = ts.createIdentifier(binding);
+        m.id = this.createIdentifier(binding, purpose);
       }
-      return m.id;
-    });
+      id = m.id;
+    }
+    return id;
   }
 
   public addNamedImport(module: string, name: string, binding: string = name): ts.Identifier {
-    return this.addIdentifier(binding, () => {
+    const purpose = `${module}.${name}`;
+    let id = this.findIdentifierFor(purpose);
+    if (!id) {
       const m = this.addModule(module);
       let { namedIds } = m;
       if (!namedIds) {
@@ -45,29 +50,25 @@ export class TsModule {
       }
       let namedId = namedIds.get(binding);
       if (!namedId) {
-        namedIds.set(binding, (namedId = { id: ts.createIdentifier(binding), name }));
+        namedIds.set(binding, (namedId = { id: this.createIdentifier(binding, purpose), name }));
       }
-      return namedId.id;
-    });
+      id = namedId.id;
+    }
+    return id;
   }
 
   public addNamespaceImport(module: string, binding: string): ts.Identifier {
-    return this.addIdentifier(binding, () => {
+    const purpose = `${module}.*`;
+    let id = this.findIdentifierFor(purpose);
+    if (!id) {
       const m = this.addModule(module);
       if (!m.namespaceId) {
         if (m.namedIds) {
           throw new Error(`Cannot import namespace from module "${module}" with existing named imports`);
         }
-        m.namespaceId = ts.createIdentifier(binding);
+        m.namespaceId = this.createIdentifier(binding, purpose);
       }
-      return m.namespaceId;
-    });
-  }
-
-  private addIdentifier(name: string, creator: () => ts.Identifier): ts.Identifier {
-    let id = this.identifiers.get(name);
-    if (!id) {
-      this.identifiers.set(name, (id = creator()));
+      id = m.namespaceId;
     }
     return id;
   }

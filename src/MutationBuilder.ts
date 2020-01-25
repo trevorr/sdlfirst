@@ -1,5 +1,6 @@
 import {
   assertScalarType,
+  DirectiveNode,
   getNullableType,
   GraphQLBoolean,
   GraphQLField,
@@ -7,21 +8,30 @@ import {
   GraphQLInputFieldConfig,
   GraphQLInputObjectType,
   GraphQLInputType,
+  GraphQLList,
+  GraphQLNamedType,
   GraphQLNonNull,
+  GraphQLNullableType,
   GraphQLObjectType,
   GraphQLObjectTypeConfig,
   GraphQLOutputType,
   GraphQLScalarType,
   GraphQLSchema,
   GraphQLString,
-  isEnumType,
+  GraphQLType,
+  InputValueDefinitionNode,
+  isCompositeType,
   isInputType,
   isInterfaceType,
+  isListType,
   isNonNullType,
   isObjectType,
-  isScalarType,
-  isUnionType,
-  StringValueNode
+  ListTypeNode,
+  NamedTypeNode,
+  NameNode,
+  NonNullTypeNode,
+  StringValueNode,
+  TypeNode
 } from 'graphql';
 import { Memoize } from 'typescript-memoize';
 import { Analyzer, TypeInfo } from './Analyzer';
@@ -154,12 +164,27 @@ export class MutationBuilder {
         .filter(notNull);
       if (fields.length > 0) {
         if (!nested) {
-          fields.unshift([CLIENT_MUTATION_ID, { type: GraphQLString }]);
+          fields.unshift([
+            CLIENT_MUTATION_ID,
+            { type: GraphQLString, astNode: makeInputValueDefinitionNode(CLIENT_MUTATION_ID, GraphQLString) }
+          ]);
         }
+        const name = `Create${type.name}Input`;
+        const description = `Automatically generated input type for ${this.mutationTypeName}.create${type.name}`;
         createType = new GraphQLInputObjectType({
-          name: `Create${type.name}Input`,
-          description: `Automatically generated input type for ${this.mutationTypeName}.create${type.name}`,
-          fields: Object.fromEntries(fields)
+          name,
+          description,
+          fields: Object.fromEntries(fields),
+          astNode: {
+            kind: 'InputObjectTypeDefinition',
+            name: makeNameNode(name),
+            description: {
+              kind: 'StringValue',
+              value: description,
+              block: true
+            },
+            fields: fields.map(f => f[1].astNode!)
+          }
         });
       } else {
         createType = null;
@@ -189,6 +214,7 @@ export class MutationBuilder {
     }
 
     let inputType;
+    let inputDirective;
     const createDir = findFirstDirective(field, this.config.createNestedDirective);
     if (createDir) {
       const inputArg = getDirectiveArgument(createDir, 'input');
@@ -228,42 +254,27 @@ export class MutationBuilder {
       }
     }
     if (!inputType) {
-      if (isScalarType(type) || isEnumType(type)) {
-        inputType = type;
-      } else if (isObjectType(type)) {
+      if (isCompositeType(type)) {
         const typeInfo = this.analyzer.findTypeInfo(type);
         if (typeInfo && typeInfo.externalIdField) {
           inputType = assertScalarType(getNullableType(typeInfo.externalIdField.type));
+          inputDirective = typeInfo.externalIdDirective;
           name += 'Id';
-        } else {
+        } else if (isObjectType(type)) {
           inputType = this.getCreateType(type, true);
           if (!inputType) {
             return null;
           }
-        }
-      } else if (isInterfaceType(type)) {
-        const typeInfo = this.analyzer.findTypeInfo(type);
-        if (typeInfo && typeInfo.externalIdField) {
-          inputType = assertScalarType(getNullableType(typeInfo.externalIdField.type));
         } else {
+          const objectTypes = isInterfaceType(type) ? this.analyzer.getImplementingTypes(type) : type.getTypes();
           try {
-            inputType = this.getExternalIdType(this.analyzer.getImplementingTypes(type));
+            inputType = this.getExternalIdType(objectTypes);
+            inputDirective = this.getExternalIdDirective(objectTypes);
+            name += 'Id';
           } catch (e) {
-            throw new Error(
-              `Cannot convert interface type "${type.name}" to input type for field "${field.name}": ${e.message}`
-            );
+            throw new Error(`Cannot convert type "${type.name}" to input type for field "${field.name}": ${e.message}`);
           }
         }
-        name += 'Id';
-      } else if (isUnionType(type)) {
-        try {
-          inputType = this.getExternalIdType(type.getTypes());
-        } catch (e) {
-          throw new Error(
-            `Cannot convert union type "${type.name}" to input type for field "${field.name}": ${e.message}`
-          );
-        }
-        name += 'Id';
       } else {
         inputType = type;
       }
@@ -273,7 +284,8 @@ export class MutationBuilder {
     if (nonNull) {
       inputType = new GraphQLNonNull(inputType);
     }
-    return [name, { type: inputType }];
+    const astNode = makeInputValueDefinitionNode(name, inputType, inputDirective ? [inputDirective] : undefined);
+    return [name, { type: inputType, astNode }];
   }
 
   private getUpdateType(type: GraphQLObjectType, nested: boolean): GraphQLInputObjectType | null {
@@ -286,20 +298,39 @@ export class MutationBuilder {
         .filter(notNull);
       if (fields.length > 0 && (externalIdField || nested)) {
         if (externalIdField) {
+          const externalIdType = new GraphQLNonNull(assertScalarType(getNullableType(externalIdField.type)));
           fields.unshift([
             externalIdField.name,
             {
-              type: new GraphQLNonNull(assertScalarType(getNullableType(externalIdField.type)))
+              type: externalIdType,
+              astNode: makeInputValueDefinitionNode(externalIdField.name, externalIdType, [
+                typeInfo?.externalIdDirective!
+              ])
             }
           ]);
         }
         if (!nested) {
-          fields.unshift([CLIENT_MUTATION_ID, { type: GraphQLString }]);
+          fields.unshift([
+            CLIENT_MUTATION_ID,
+            { type: GraphQLString, astNode: makeInputValueDefinitionNode(CLIENT_MUTATION_ID, GraphQLString) }
+          ]);
         }
+        const name = `Update${type.name}Input`;
+        const description = `Automatically generated input type for ${this.mutationTypeName}.update${type.name}`;
         updateType = new GraphQLInputObjectType({
-          name: `Update${type.name}Input`,
-          description: `Automatically generated input type for ${this.mutationTypeName}.update${type.name}`,
-          fields: Object.fromEntries(fields)
+          name,
+          description,
+          fields: Object.fromEntries(fields),
+          astNode: {
+            kind: 'InputObjectTypeDefinition',
+            name: makeNameNode(name),
+            description: {
+              kind: 'StringValue',
+              value: description,
+              block: true
+            },
+            fields: fields.map(f => f[1].astNode!)
+          }
         });
       } else {
         updateType = null;
@@ -327,6 +358,7 @@ export class MutationBuilder {
     }
 
     let inputType;
+    let inputDirective;
     const updateDir = findFirstDirective(field, this.config.updateNestedDirective);
     if (updateDir) {
       const inputArg = getDirectiveArgument(updateDir, 'input');
@@ -342,65 +374,70 @@ export class MutationBuilder {
       }
     }
     if (!inputType) {
-      if (isScalarType(type) || isEnumType(type)) {
-        inputType = type;
-      } else if (isObjectType(type)) {
+      if (isCompositeType(type)) {
         const typeInfo = this.analyzer.findTypeInfo(type);
         if (typeInfo && typeInfo.externalIdField) {
           inputType = assertScalarType(getNullableType(typeInfo.externalIdField.type));
+          inputDirective = typeInfo.externalIdDirective;
           name += 'Id';
-        } else {
+        } else if (isObjectType(type)) {
           inputType = this.getUpdateType(type, true);
           if (!inputType) {
             return null;
           }
-        }
-      } else if (isInterfaceType(type)) {
-        const typeInfo = this.analyzer.findTypeInfo(type);
-        if (typeInfo && typeInfo.externalIdField) {
-          inputType = assertScalarType(getNullableType(typeInfo.externalIdField.type));
         } else {
+          const objectTypes = isInterfaceType(type) ? this.analyzer.getImplementingTypes(type) : type.getTypes();
           try {
-            inputType = this.getExternalIdType(this.analyzer.getImplementingTypes(type));
+            inputType = this.getExternalIdType(objectTypes);
+            inputDirective = this.getExternalIdDirective(objectTypes);
+            name += 'Id';
           } catch (e) {
-            throw new Error(
-              `Cannot convert interface type "${type.name}" to input type for field "${field.name}": ${e.message}`
-            );
+            throw new Error(`Cannot convert type "${type.name}" to input type for field "${field.name}": ${e.message}`);
           }
         }
-        name += 'Id';
-      } else if (isUnionType(type)) {
-        try {
-          inputType = this.getExternalIdType(type.getTypes());
-        } catch (e) {
-          throw new Error(
-            `Cannot convert union type "${type.name}" to input type for field "${field.name}": ${e.message}`
-          );
-        }
-        name += 'Id';
       } else {
         inputType = type;
       }
     }
 
     inputType = wrapType(inputType, wrapped.wrappers) as GraphQLInputType;
-    return [name, { type: inputType }];
+    const astNode = makeInputValueDefinitionNode(name, inputType, inputDirective ? [inputDirective] : undefined);
+    return [name, { type: inputType, astNode }];
+  }
+
+  private getExternalIdDirective(objectTypes: Iterable<GraphQLObjectType>): DirectiveNode | undefined {
+    return Array.from(objectTypes, impl => {
+      const typeInfo = this.analyzer.findTypeInfo(impl);
+      if (!typeInfo || !typeInfo.externalIdDirective) {
+        throw new Error(`No external ID for type "${impl.name}"`);
+      }
+      return typeInfo.externalIdDirective;
+    }).reduce<DirectiveNode | undefined>((result, dir) => {
+      if (!result) {
+        return dir;
+      } else if (result.name.value !== dir.name.value) {
+        throw new Error(`Found conflicting external ID directives: "${result.name.value}" and "${dir.name.value}"`);
+      }
+      return result;
+    }, undefined);
   }
 
   private getExternalIdType(objectTypes: Iterable<GraphQLObjectType>): GraphQLScalarType {
-    let resultType;
-    for (const impl of objectTypes) {
+    const resultType = Array.from(objectTypes, impl => {
       const typeInfo = this.analyzer.findTypeInfo(impl);
       if (!typeInfo || !typeInfo.externalIdField) {
         throw new Error(`No external ID for type "${impl.name}"`);
       }
-      const externalIdType = assertScalarType(getNullableType(typeInfo.externalIdField.type));
-      if (!resultType) {
-        resultType = externalIdType;
-      } else if (resultType !== externalIdType) {
-        throw new Error(`Found multiple external ID types: "${resultType.name}" and "${externalIdType.name}"`);
+      return typeInfo.externalIdField;
+    }).reduce<GraphQLScalarType | undefined>((type, field) => {
+      const fieldType = assertScalarType(getNullableType(field.type));
+      if (!type) {
+        return fieldType;
+      } else if (type !== fieldType) {
+        throw new Error(`Found conflicting external ID types: "${type.name}" and "${fieldType.name}"`);
       }
-    }
+      return type;
+    }, undefined);
     if (!resultType) {
       throw new Error('No implementations for interface');
     }
@@ -447,7 +484,9 @@ export class MutationBuilder {
 
   @Memoize()
   private getImmutableDirectives(): Set<string> {
-    return new Set(Array.from(this.getReadonlyDirectives()).concat(this.config.immutableDirective));
+    return new Set(
+      Array.from(this.getReadonlyDirectives()).concat(this.config.immutableDirective, this.config.stringIdDirective)
+    );
   }
 
   @Memoize()
@@ -466,4 +505,47 @@ function lcFirst(s: string): string {
 
 function ucFirst(s: string): string {
   return s.charAt(0).toUpperCase() + s.substring(1);
+}
+
+function makeInputValueDefinitionNode(
+  name: string,
+  type: GraphQLInputType,
+  directives?: DirectiveNode[]
+): InputValueDefinitionNode {
+  return {
+    kind: 'InputValueDefinition',
+    name: makeNameNode(name),
+    type: makeTypeNode(type),
+    directives
+  };
+}
+
+function makeTypeNode(type: GraphQLNamedType): NamedTypeNode;
+function makeTypeNode(type: GraphQLList<GraphQLType>): ListTypeNode;
+function makeTypeNode(type: GraphQLNonNull<GraphQLNullableType>): NonNullTypeNode;
+function makeTypeNode(type: GraphQLType): TypeNode;
+function makeTypeNode(type: GraphQLType): TypeNode {
+  if (isNonNullType(type)) {
+    return {
+      kind: 'NonNullType',
+      type: makeTypeNode(type.ofType)
+    };
+  }
+  if (isListType(type)) {
+    return {
+      kind: 'ListType',
+      type: makeTypeNode(type.ofType)
+    };
+  }
+  return {
+    kind: 'NamedType',
+    name: makeNameNode(type.name)
+  };
+}
+
+function makeNameNode(name: string): NameNode {
+  return {
+    kind: 'Name',
+    value: name
+  };
 }
