@@ -42,7 +42,7 @@ import { unwrapType, wrapType } from './util/graphql-util';
 
 type FieldType = GraphQLField<any, any>;
 
-const CLIENT_MUTATION_ID = 'clientMutationId';
+export const CLIENT_MUTATION_ID = 'clientMutationId';
 const DEFAULT_MUTATION_TYPE_NAME = 'Mutation';
 
 export class MutationBuilder {

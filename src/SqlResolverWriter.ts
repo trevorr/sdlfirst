@@ -25,10 +25,10 @@ import {
 import path from 'path';
 import ts from 'typescript';
 import { Analyzer, FieldType } from './Analyzer';
-import { defaultConfig as defaultDirectiveConfig, DirectiveConfig } from './config/DirectiveConfig';
-import { defaultConfig as defaultPathConfig, PathConfig } from './config/PathConfig';
+import { defaultConfig as defaultSqlConfig, SqlConfig } from './config/SqlConfig';
+import { CLIENT_MUTATION_ID } from './MutationBuilder';
 import { SqlSchemaMappings, TypeTable } from './SqlSchemaBuilder';
-import { findFirstDirective, getDirectiveArgument, getRequiredDirectiveArgument } from './util/ast-util';
+import { findFirstDirective, getDirectiveArgument, getRequiredDirectiveArgument, hasDirectives } from './util/ast-util';
 import { compare } from './util/compare';
 import { mkdir } from './util/fs-util';
 import { defaultConfig as defaultFormatterConfig, TsFormatter, TsFormatterConfig } from './util/TsFormatter';
@@ -40,7 +40,7 @@ const PartialType = 'Partial';
 const PromiseType = 'Promise';
 const ScalarsType = 'Scalars';
 
-export interface SqlResolverConfig extends DirectiveConfig, PathConfig, TsFormatterConfig {
+export interface SqlResolverConfig extends SqlConfig, TsFormatterConfig {
   includeRootTypes: boolean;
   splitRootMembers: boolean;
   includeUserTypes: boolean;
@@ -49,6 +49,8 @@ export interface SqlResolverConfig extends DirectiveConfig, PathConfig, TsFormat
   gqlsqlModule: string;
   tsfvBinding: string;
   tsfvModule: string;
+  id62Binding: string;
+  id62Module: string;
   schemaTypesNamespace?: string;
   schemaTypesModule?: string;
   parentArgName: string;
@@ -64,8 +66,7 @@ export interface SqlResolverConfig extends DirectiveConfig, PathConfig, TsFormat
 }
 
 export const defaultConfig: SqlResolverConfig = {
-  ...defaultDirectiveConfig,
-  ...defaultPathConfig,
+  ...defaultSqlConfig,
   ...defaultFormatterConfig,
   usePrettier: true,
   includeRootTypes: true,
@@ -76,6 +77,8 @@ export const defaultConfig: SqlResolverConfig = {
   gqlsqlModule: 'gqlsql',
   tsfvBinding: 'tsfv',
   tsfvModule: 'tsfv',
+  id62Binding: 'id62',
+  id62Module: 'id62',
   schemaTypesNamespace: 'schema',
   schemaTypesModule: '../types',
   parentArgName: 'parent',
@@ -259,6 +262,9 @@ export class SqlResolverWriter {
             if (targetType) {
               statements.push(this.destructureInput(argsId, inputType, module));
               statements.push(...this.validateInput(inputType, targetType, module));
+              if (this.hasExternalId(targetType)) {
+                statements.push(this.declareXid(module));
+              }
               // TODO: perform insert(s), obtain internal ID
               // TODO: query result
               statements.push(
@@ -273,7 +279,7 @@ export class SqlResolverWriter {
           case 'update':
             if (targetType) {
               statements.push(this.destructureInput(argsId, inputType, module));
-              // TODO: ensure at least one defined field
+              statements.push(this.ensureModification(inputType, targetType, module));
               statements.push(...this.validateInput(inputType, targetType, module));
               // TODO: perform update(s), obtain internal ID
               // TODO: query result
@@ -380,6 +386,10 @@ export class SqlResolverWriter {
     return null;
   }
 
+  private hasExternalId(type: GraphQLCompositeType): boolean {
+    return this.analyzer.getTypeInfo(type).externalIdDirective?.name.value === this.config.externalIdDirective;
+  }
+
   private destructureInput(argsId: ts.Identifier, inputType: GraphQLInputObjectType, module: TsModule): ts.Statement {
     return ts.createVariableStatement(
       undefined,
@@ -396,6 +406,71 @@ export class SqlResolverWriter {
         ts.NodeFlags.Const
       )
     );
+  }
+
+  private ensureModification(
+    inputType: GraphQLInputObjectType,
+    targetType: GraphQLCompositeType,
+    module: TsModule
+  ): ts.Statement {
+    const gqlsqlId = module.addNamespaceImport(this.config.gqlsqlModule, this.config.gqlsqlNamespace);
+    return ts.createIf(
+      ts.createLogicalNot(
+        ts.createCall(ts.createPropertyAccess(gqlsqlId, 'hasDefinedElement'), undefined, [
+          ts.createArrayLiteral(this.listInputs(inputType, targetType, module))
+        ])
+      ),
+      ts.createBlock([
+        ts.createThrow(
+          ts.createNew(ts.createIdentifier('Error'), undefined, [
+            ts.createStringLiteral('Update must specify at least one field to modify')
+          ])
+        )
+      ])
+    );
+  }
+
+  private listInputs(
+    inputType: GraphQLInputObjectType,
+    targetType: GraphQLCompositeType,
+    module: TsModule,
+    getFieldRef: (field: GraphQLInputField) => ts.Expression = field => module.createIdentifier(field.name, field),
+    output: ts.Expression[] = []
+  ): ts.Expression[] {
+    if (isUnionType(targetType)) {
+      targetType = targetType.getTypes()[0];
+    }
+    const targetFields = targetType.getFields();
+    for (const field of Object.values(inputType.getFields())) {
+      const targetField = targetFields[field.name];
+      if (field.name === CLIENT_MUTATION_ID || (targetField && this.isExternalId(targetField))) continue;
+      const fieldType = getNullableType(field.type);
+      const fieldRef = getFieldRef(field);
+      if (isInputObjectType(fieldType) && targetField) {
+        const targetType = getNullableType(targetField.type);
+        if (isCompositeType(targetType)) {
+          this.listInputs(
+            fieldType,
+            targetType,
+            module,
+            field =>
+              ts.createPropertyAccessChain(
+                fieldRef,
+                ts.createToken(ts.SyntaxKind.QuestionDotToken),
+                module.createIdentifier(field.name, field)
+              ),
+            output
+          );
+        }
+      } else {
+        output.push(fieldRef);
+      }
+    }
+    return output;
+  }
+
+  private isExternalId(field: GraphQLInputField | FieldType): boolean {
+    return hasDirectives(field, [this.config.externalIdDirective, this.config.stringIdDirective]);
   }
 
   private validateInput(
@@ -495,6 +570,22 @@ export class SqlResolverWriter {
       module.addImport(this.config.tsfvModule, this.config.tsfvBinding);
     }
     return statements;
+  }
+
+  private declareXid(module: TsModule): ts.Statement {
+    return ts.createVariableStatement(
+      undefined,
+      ts.createVariableDeclarationList(
+        [
+          ts.createVariableDeclaration(
+            module.createIdentifier(this.config.externalIdName),
+            undefined,
+            ts.createCall(module.addImport(this.config.id62Module, this.config.id62Binding), undefined, undefined)
+          )
+        ],
+        ts.NodeFlags.Const
+      )
+    );
   }
 
   private buildConnectionResolver(

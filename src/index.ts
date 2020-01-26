@@ -51,7 +51,7 @@ export default class SDLFirst {
     return new FieldVisitorWriter(this.analyzer, this.getSqlMappings(config), config).writeVisitors();
   }
 
-  public writeResolvers(config?: Partial<SqlConfig & SqlResolverConfig>): Promise<string[]> {
+  public writeResolvers(config?: Partial<SqlResolverConfig>): Promise<string[]> {
     return new SqlResolverWriter(this.schema, this.analyzer, this.getSqlMappings(config), config).writeResolvers();
   }
 

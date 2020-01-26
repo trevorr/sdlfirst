@@ -1,15 +1,9 @@
-import {
-  ArgumentNode,
-  ASTNode,
-  DirectiveNode,
-  EnumValueDefinitionNode,
-  FieldDefinitionNode,
-  Location,
-  TypeDefinitionNode
-} from 'graphql';
+import { ArgumentNode, ASTNode, DirectiveNode, Location } from 'graphql';
 
 interface WithDirectives {
-  astNode?: EnumValueDefinitionNode | FieldDefinitionNode | TypeDefinitionNode | null;
+  astNode?: {
+    readonly directives?: ReadonlyArray<DirectiveNode>;
+  } | null;
 }
 
 export function findFirstDirective(type: WithDirectives, name: string): DirectiveNode | undefined {
