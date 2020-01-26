@@ -419,20 +419,26 @@ export class SqlResolverWriter {
         switch (fieldType.name) {
           case 'ID':
             const sidDir = findFirstDirective(targetField, this.config.stringIdDirective);
-            const xidDir = findFirstDirective(targetField, this.config.externalIdDirective);
-            expr = getRangeValidator(expr, sidDir || xidDir, 'string', {
+            expr = getRangeValidator(expr, sidDir, 'string', {
               betweenMethod: 'length',
+              equalMethod: 'length',
               minMethod: 'minLength',
               maxMethod: 'maxLength',
               maxArgName: 'maxLength',
-              defaultMin: '1',
-              defaultMax: xidDir ? '26' : undefined
+              defaultMin: '1'
             });
+            const xidDir = findFirstDirective(targetField, this.config.externalIdDirective);
+            if (xidDir) {
+              expr = ts.createCall(ts.createPropertyAccess(expr, 'pattern'), undefined, [
+                ts.createRegularExpressionLiteral('/[0-9A-Za-z]{21}/')
+              ]);
+            }
             break;
           case 'String':
             const lengthDir = findFirstDirective(targetField, this.config.lengthDirective);
             expr = getRangeValidator(expr, lengthDir, 'string', {
               betweenMethod: 'length',
+              equalMethod: 'length',
               minMethod: 'minLength',
               maxMethod: 'maxLength',
               defaultMin: '1'
@@ -729,6 +735,7 @@ function capitalize(s: string): string {
 
 interface RangeValidatorOptions {
   betweenMethod: string;
+  equalMethod?: string;
   minMethod: string;
   maxMethod: string;
   minArgName: string;
@@ -764,12 +771,19 @@ function getRangeValidator(
       max = (maxArg.value as IntValueNode).value;
     }
     let method, params;
-    if (min != null && max != null) {
-      method = opts.betweenMethod;
-      params = [min, max];
-    } else if (min != null) {
-      method = opts.minMethod;
-      params = [min];
+    if (min != null) {
+      if (max != null) {
+        if (min === max && opts.equalMethod) {
+          method = opts.equalMethod;
+          params = [min];
+        } else {
+          method = opts.betweenMethod;
+          params = [min, max];
+        }
+      } else {
+        method = opts.minMethod;
+        params = [min];
+      }
     } else if (max != null) {
       method = opts.maxMethod;
       params = [max];
