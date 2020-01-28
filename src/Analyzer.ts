@@ -500,6 +500,9 @@ export class Analyzer {
               `Referring type "${refType.name}" is not assignable to one-to-many back-reference field "${nodeType.name}.${fieldName}"`
             );
           }
+          if (field.args.some(arg => isNonNullType(arg.type))) {
+            throw new Error(`One-to-many back-reference field "${fieldName}" cannot have non-null arguments`);
+          }
           return field;
         }
       }
@@ -507,7 +510,7 @@ export class Analyzer {
       // is there exactly one way to refer back to the referring type from the fields of the node type?
       // if so, we'll assume that is how the one-to-many relation is defined
       for (const field of Object.values(nodeType.getFields())) {
-        if (this.isIdentifiedBy(field.type, refType)) {
+        if (this.isIdentifiedBy(field.type, refType) && !field.args.some(arg => isNonNullType(arg.type))) {
           backrefField = field;
           ++backrefFieldCount;
         }
@@ -552,10 +555,20 @@ export class Analyzer {
                 `One-to-many back-reference join field "${nodeFieldName}" not found in node type "${nodeType.name}" for "${refType.name}.${refField.name}"`
               );
             }
+            if (nodeField.args.some(arg => isNonNullType(arg.type))) {
+              throw new Error(
+                `One-to-many back-reference join field "${nodeFieldName}" cannot have non-null arguments`
+              );
+            }
             const refJoinField = refType.getFields()[refJoinFieldName];
             if (refJoinField == null) {
               throw new Error(
                 `One-to-many back-reference join field "${refJoinFieldName}" not found in referring type "${refType.name}" for "${refField.name}"`
+              );
+            }
+            if (refJoinField.args.some(arg => isNonNullType(arg.type))) {
+              throw new Error(
+                `One-to-many back-reference join field "${refJoinFieldName}" cannot have non-null arguments`
               );
             }
             result.push([nodeField, refJoinField]);
