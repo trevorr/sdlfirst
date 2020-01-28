@@ -1,8 +1,8 @@
+import assert from 'assert';
 import {
   DirectiveNode,
   getNamedType,
   getNullableType,
-  GraphQLCompositeType,
   GraphQLInputField,
   GraphQLInputObjectType,
   GraphQLInterfaceType,
@@ -11,7 +11,6 @@ import {
   GraphQLOutputType,
   GraphQLSchema,
   IntValueNode,
-  isCompositeType,
   isEnumType,
   isInputObjectType,
   isInterfaceType,
@@ -22,17 +21,19 @@ import {
   isUnionType,
   StringValueNode
 } from 'graphql';
+import { pascalCase } from 'pascal-case';
 import path from 'path';
 import ts from 'typescript';
-import { Analyzer, FieldType } from './Analyzer';
-import { defaultConfig as defaultSqlConfig, SqlConfig } from './config/SqlConfig';
+import { Analyzer, FieldType, isTableType, TableType, TableTypeInfo } from './Analyzer';
+import { defaultConfig as defaultPathConfig, defaultConfig as defaultSqlConfig, SqlConfig } from './config/SqlConfig';
 import { CLIENT_MUTATION_ID } from './MutationBuilder';
-import { SqlSchemaMappings, TypeTable } from './SqlSchemaBuilder';
-import { findFirstDirective, getDirectiveArgument, getRequiredDirectiveArgument, hasDirectives } from './util/ast-util';
+import { isColumns, SqlSchemaMappings, TypeTable } from './SqlSchemaBuilder';
+import { findFirstDirective, getDirectiveArgument, getRequiredDirectiveArgument } from './util/ast-util';
+import { lcFirst } from './util/case';
 import { compare } from './util/compare';
 import { mkdir } from './util/fs-util';
 import { defaultConfig as defaultFormatterConfig, TsFormatter, TsFormatterConfig } from './util/TsFormatter';
-import { TsModule } from './util/TsModule';
+import { TsBlock, TsModule } from './util/TsModule';
 
 const GraphQLJSModule = 'graphql';
 const InfoType = 'GraphQLResolveInfo';
@@ -51,8 +52,8 @@ export interface SqlResolverConfig extends SqlConfig, TsFormatterConfig {
   tsfvModule: string;
   id62Binding: string;
   id62Module: string;
-  schemaTypesNamespace?: string;
-  schemaTypesModule?: string;
+  schemaTypesNamespace: string;
+  schemaTypesModule: string;
   parentArgName: string;
   rootTypeParentArg: boolean;
   argsArgName: string;
@@ -80,7 +81,7 @@ export const defaultConfig: SqlResolverConfig = {
   id62Binding: 'id62',
   id62Module: 'id62',
   schemaTypesNamespace: 'schema',
-  schemaTypesModule: '../types',
+  schemaTypesModule: path.relative(defaultPathConfig.resolversDir, defaultPathConfig.sdlTypesDir),
   parentArgName: 'parent',
   rootTypeParentArg: false,
   argsArgName: 'args',
@@ -108,7 +109,7 @@ export class SqlResolverWriter {
   private readonly resolvedTypes = new Set<GraphQLNamedType>();
   private readonly resolvers: ResolverInfo[] = [];
   private readonly methodResolvers: ResolverInfo[] = [];
-  private readonly schemaNamespaceId: ts.Identifier | null;
+  private readonly schemaNamespaceId: ts.Identifier;
   private readonly contextType: ts.TypeNode;
   private readonly formatter: TsFormatter;
 
@@ -121,7 +122,7 @@ export class SqlResolverWriter {
     this.config = Object.assign({}, defaultConfig, config);
 
     const { schemaTypesNamespace } = this.config;
-    this.schemaNamespaceId = schemaTypesNamespace ? ts.createIdentifier(schemaTypesNamespace) : null;
+    this.schemaNamespaceId = ts.createIdentifier(schemaTypesNamespace);
 
     const { contextType } = this.config;
     if (contextType != null) {
@@ -221,7 +222,7 @@ export class SqlResolverWriter {
     }
 
     const visitorsId = module.addImport(
-      path.relative(this.config.resolversDir, `${this.config.fieldVisitorsDir}`),
+      path.relative(this.config.resolversDir, this.config.fieldVisitorsDir),
       'visitors'
     );
 
@@ -252,51 +253,76 @@ export class SqlResolverWriter {
         this.createSimpleParameter(infoId, ts.createTypeReferenceNode(infoTypeId, undefined))
       ];
       const returnType = ts.createTypeReferenceNode(PromiseType, [await this.getFieldReturnType(field.type)]);
-      let statements: ts.Statement[] = [];
+
+      const block = module.newBlock();
       const fieldType = getNamedType(field.type);
       let inputType;
-      if (rootType === RootType.Mutation && (inputType = this.getMutationInputType(field))) {
-        const targetType = this.getMutationTargetType(field);
+      let targetTypeInfo;
+      if (
+        rootType === RootType.Mutation &&
+        isObjectType(fieldType) &&
+        (inputType = this.getMutationInputType(field)) &&
+        (targetTypeInfo = this.getMutationTargetTypeInfo(field))
+      ) {
+        const targetType = targetTypeInfo.type;
         switch (field.name.substring(0, 6)) {
           case 'create':
-            if (targetType) {
-              statements.push(this.destructureInput(argsId, inputType, module));
-              statements.push(...this.validateInput(inputType, targetType, module));
-              if (this.hasExternalId(targetType)) {
-                statements.push(this.declareXid(module));
-              }
-              // TODO: perform insert(s), obtain internal ID
-              // TODO: query result
-              statements.push(
-                ts.createThrow(
-                  ts.createNew(ts.createIdentifier('Error'), undefined, [
-                    ts.createStringLiteral(`TODO: implement resolver for ${type.name}.${field.name}`)
-                  ])
+            this.destructureInput(block, argsId, inputType, targetType);
+            this.validateInput(block, inputType, targetType);
+            const { idId, identityTableMapping } = this.performInsert(block, contextId, inputType, targetTypeInfo);
+
+            const { configBlock, resolverId, lookupExpr } = this.buildLookupResolver(block, identityTableMapping, {
+              contextId,
+              infoId,
+              visitorsId
+            });
+            configBlock.addStatement(
+              ts.createExpressionStatement(
+                ts.createCall(
+                  ts.createPropertyAccess(
+                    ts.createCall(ts.createPropertyAccess(resolverId, 'getBaseQuery'), undefined, []),
+                    'where'
+                  ),
+                  undefined,
+                  [ts.createStringLiteral(this.config.internalIdName), idId]
                 )
-              );
-            }
+              )
+            );
+            const resultName = lcFirst(targetType.name);
+            const resultId = block.declareConst(
+              resultName,
+              undefined,
+              ts.createAsExpression(ts.createAwait(lookupExpr), this.createSchemaTypeRef(targetType.name))
+            );
+
+            block.addStatement(
+              ts.createReturn(
+                ts.createObjectLiteral([
+                  block.createIdPropertyAssignment(CLIENT_MUTATION_ID, block.findIdentifier(CLIENT_MUTATION_ID)),
+                  block.createIdPropertyAssignment(resultName, resultId)
+                ])
+              )
+            );
             break;
           case 'update':
-            if (targetType) {
-              statements.push(this.destructureInput(argsId, inputType, module));
-              statements.push(this.ensureModification(inputType, targetType, module));
-              statements.push(...this.validateInput(inputType, targetType, module));
-              // TODO: perform update(s), obtain internal ID
-              // TODO: query result
-              statements.push(
-                ts.createThrow(
-                  ts.createNew(ts.createIdentifier('Error'), undefined, [
-                    ts.createStringLiteral(`TODO: implement resolver for ${type.name}.${field.name}`)
-                  ])
-                )
-              );
-            }
+            this.destructureInput(block, argsId, inputType, targetType);
+            this.ensureModification(block, inputType, targetType);
+            this.validateInput(block, inputType, targetType);
+            // TODO: perform update(s), obtain internal ID
+            // TODO: query result
+            block.addStatement(
+              ts.createThrow(
+                ts.createNew(ts.createIdentifier('Error'), undefined, [
+                  ts.createStringLiteral(`TODO: implement resolver for ${type.name}.${field.name}`)
+                ])
+              )
+            );
             break;
           case 'delete':
-            statements.push(this.destructureInput(argsId, inputType, module));
+            this.destructureInput(block, argsId, inputType, targetType);
             // TODO: delete object(s), if exist
             // TODO: return mutation ID and deleted flag
-            statements.push(
+            block.addStatement(
               ts.createThrow(
                 ts.createNew(ts.createIdentifier('Error'), undefined, [
                   ts.createStringLiteral(`TODO: implement resolver for ${type.name}.${field.name}`)
@@ -307,10 +333,10 @@ export class SqlResolverWriter {
         }
       } else if (this.analyzer.isConnectionType(fieldType)) {
         const nodeType = this.analyzer.getNodeTypeForConnection(fieldType as GraphQLObjectType);
-        if (isObjectType(nodeType) || isInterfaceType(nodeType)) {
+        if (isTableType(nodeType)) {
           const tableMapping = this.sqlMappings.getIdentityTableForType(nodeType);
           if (tableMapping) {
-            statements = this.buildConnectionResolver(module, tableMapping, {
+            this.buildConnectionResolver(block, tableMapping, {
               argsId,
               contextId,
               infoId,
@@ -323,18 +349,34 @@ export class SqlResolverWriter {
         } else {
           console.log(`TODO: Unhandled node type ${fieldType.name}`);
         }
-      } else if (isObjectType(fieldType) || isInterfaceType(fieldType)) {
+      } else if (isTableType(fieldType)) {
         const tableMapping = this.sqlMappings.getIdentityTableForType(fieldType);
         if (tableMapping) {
-          statements = this.buildLookupResolver(module, field, tableMapping, { argsId, contextId, infoId, visitorsId });
+          const { configBlock, resolverId, lookupExpr } = this.buildLookupResolver(block, tableMapping, {
+            contextId,
+            infoId,
+            visitorsId
+          });
+
+          // add a placeholder for building query based on arguments
+          let configExpr = ts.createCall(ts.createPropertyAccess(resolverId, 'getBaseQuery'), undefined, []);
+          if ('id' in field.args) {
+            configExpr = ts.createCall(ts.createPropertyAccess(configExpr, 'where'), undefined, [
+              ts.createStringLiteral('xid'),
+              ts.createPropertyAccess(argsId, 'id')
+            ]);
+          }
+          configBlock.addStatement(ts.createExpressionStatement(configExpr));
+
+          block.addStatement(ts.createReturn(lookupExpr));
         } else {
           console.log(`TODO: No table mapping for ${fieldType.name}`);
         }
       } else {
         console.log(`TODO: Unhandled type ${fieldType.name}`);
       }
-      if (statements.length === 0) {
-        statements.push(
+      if (block.isEmpty()) {
+        block.addStatement(
           ts.createThrow(
             ts.createNew(ts.createIdentifier('Error'), undefined, [
               ts.createStringLiteral(`TODO: implement resolver for ${type.name}.${field.name}`)
@@ -345,14 +387,14 @@ export class SqlResolverWriter {
       properties.push(
         ts.createMethod(
           undefined,
-          undefined,
+          [ts.createModifier(ts.SyntaxKind.AsyncKeyword)],
           undefined,
           field.name,
           undefined,
           undefined,
           params,
           returnType,
-          ts.createBlock(statements, true)
+          block.toBlock()
         )
       );
     }
@@ -372,92 +414,84 @@ export class SqlResolverWriter {
     return null;
   }
 
-  private getMutationTargetType(field: FieldType): GraphQLCompositeType | null {
-    const fieldType = getNullableType(field.type);
-    if (isObjectType(fieldType)) {
-      const typeName = field.name.substring(6); // createFoo -> Foo
-      for (const payloadField of Object.values(fieldType.getFields())) {
-        const payloadFieldType = getNullableType(payloadField.type);
-        if (isCompositeType(payloadFieldType) && payloadFieldType.name === typeName) {
-          return payloadFieldType;
-        }
-      }
+  private getMutationTargetTypeInfo(field: FieldType): TableTypeInfo | undefined {
+    const typeName = field.name.substring(6); // createFoo -> Foo
+    const type = this.schema.getType(typeName);
+    if (isTableType(type)) {
+      return this.analyzer.getTypeInfo(type);
     }
-    return null;
   }
 
-  private hasExternalId(type: GraphQLCompositeType): boolean {
-    return this.analyzer.getTypeInfo(type).externalIdDirective?.name.value === this.config.externalIdDirective;
-  }
-
-  private destructureInput(argsId: ts.Identifier, inputType: GraphQLInputObjectType, module: TsModule): ts.Statement {
-    return ts.createVariableStatement(
+  private destructureInput(
+    block: TsBlock,
+    argsId: ts.Identifier,
+    inputType: GraphQLInputObjectType,
+    targetType: TableType
+  ): void {
+    const targetFields = targetType.getFields();
+    block.declareConst(
+      ts.createObjectBindingPattern(
+        Object.values(inputType.getFields()).map(field => {
+          const targetField = targetFields[field.name];
+          if (targetField) {
+            const dir = this.getExternalId(targetField);
+            if (dir) {
+              return ts.createBindingElement(undefined, field.name, block.createIdentifier(dir.name.value, field));
+            }
+          }
+          return block.createBindingElement(field.name, field);
+        })
+      ),
       undefined,
-      ts.createVariableDeclarationList(
-        [
-          ts.createVariableDeclaration(
-            ts.createObjectBindingPattern(
-              Object.values(inputType.getFields()).map(field => module.createBindingElement(field.name, field))
-            ),
-            undefined,
-            ts.createPropertyAccess(argsId, 'input')
+      ts.createPropertyAccess(argsId, 'input')
+    );
+  }
+
+  private ensureModification(block: TsBlock, inputType: GraphQLInputObjectType, targetType: TableType): void {
+    const gqlsqlId = block.module.addNamespaceImport(this.config.gqlsqlModule, this.config.gqlsqlNamespace);
+    block.addStatement(
+      ts.createIf(
+        ts.createLogicalNot(
+          ts.createCall(ts.createPropertyAccess(gqlsqlId, 'hasDefinedElement'), undefined, [
+            ts.createArrayLiteral(this.listInputs(block, inputType, targetType))
+          ])
+        ),
+        ts.createBlock([
+          ts.createThrow(
+            ts.createNew(ts.createIdentifier('Error'), undefined, [
+              ts.createStringLiteral('Update must specify at least one field to modify')
+            ])
           )
-        ],
-        ts.NodeFlags.Const
+        ])
       )
     );
   }
 
-  private ensureModification(
-    inputType: GraphQLInputObjectType,
-    targetType: GraphQLCompositeType,
-    module: TsModule
-  ): ts.Statement {
-    const gqlsqlId = module.addNamespaceImport(this.config.gqlsqlModule, this.config.gqlsqlNamespace);
-    return ts.createIf(
-      ts.createLogicalNot(
-        ts.createCall(ts.createPropertyAccess(gqlsqlId, 'hasDefinedElement'), undefined, [
-          ts.createArrayLiteral(this.listInputs(inputType, targetType, module))
-        ])
-      ),
-      ts.createBlock([
-        ts.createThrow(
-          ts.createNew(ts.createIdentifier('Error'), undefined, [
-            ts.createStringLiteral('Update must specify at least one field to modify')
-          ])
-        )
-      ])
-    );
-  }
-
   private listInputs(
+    block: TsBlock,
     inputType: GraphQLInputObjectType,
-    targetType: GraphQLCompositeType,
-    module: TsModule,
-    getFieldRef: (field: GraphQLInputField) => ts.Expression = field => module.createIdentifier(field.name, field),
+    targetType: TableType,
+    getFieldRef: (field: GraphQLInputField) => ts.Expression = field => block.createIdentifier(field.name, field),
     output: ts.Expression[] = []
   ): ts.Expression[] {
-    if (isUnionType(targetType)) {
-      targetType = targetType.getTypes()[0];
-    }
     const targetFields = targetType.getFields();
     for (const field of Object.values(inputType.getFields())) {
       const targetField = targetFields[field.name];
-      if (field.name === CLIENT_MUTATION_ID || (targetField && this.isExternalId(targetField))) continue;
+      if (field.name === CLIENT_MUTATION_ID || (targetField && this.getExternalId(targetField))) continue;
       const fieldType = getNullableType(field.type);
       const fieldRef = getFieldRef(field);
       if (isInputObjectType(fieldType) && targetField) {
         const targetType = getNullableType(targetField.type);
-        if (isCompositeType(targetType)) {
+        if (isTableType(targetType)) {
           this.listInputs(
+            block,
             fieldType,
             targetType,
-            module,
             field =>
               ts.createPropertyAccessChain(
                 fieldRef,
                 ts.createToken(ts.SyntaxKind.QuestionDotToken),
-                module.createIdentifier(field.name, field)
+                block.createIdentifier(field.name, field)
               ),
             output
           );
@@ -469,20 +503,19 @@ export class SqlResolverWriter {
     return output;
   }
 
-  private isExternalId(field: GraphQLInputField | FieldType): boolean {
-    return hasDirectives(field, [this.config.externalIdDirective, this.config.stringIdDirective]);
+  private getExternalId(field: GraphQLInputField | FieldType): DirectiveNode | undefined {
+    return (
+      findFirstDirective(field, this.config.externalIdDirective) ||
+      findFirstDirective(field, this.config.stringIdDirective)
+    );
   }
 
   private validateInput(
+    block: TsBlock,
     inputType: GraphQLInputObjectType,
-    targetType: GraphQLCompositeType,
-    module: TsModule,
-    getFieldRef: (field: GraphQLInputField) => ts.Expression = field => module.createIdentifier(field.name, field)
-  ): ts.Statement[] {
-    const statements: ts.Statement[] = [];
-    if (isUnionType(targetType)) {
-      targetType = targetType.getTypes()[0];
-    }
+    targetType: TableType,
+    getFieldRef: (field: GraphQLInputField) => ts.Expression = field => block.createIdentifier(field.name, field)
+  ): void {
     const targetFields = targetType.getFields();
     const tsfvId = ts.createIdentifier(this.config.tsfvBinding);
     for (const field of Object.values(inputType.getFields())) {
@@ -539,7 +572,7 @@ export class SqlResolverWriter {
           if (optional) {
             expr = ts.createCall(ts.createPropertyAccess(expr, 'optional'), undefined, undefined);
           }
-          statements.push(
+          block.addStatement(
             ts.createExpressionStatement(
               ts.createCall(ts.createPropertyAccess(expr, 'check'), undefined, [
                 getFieldRef(field),
@@ -552,44 +585,176 @@ export class SqlResolverWriter {
         const targetField = targetFields[field.name];
         if (targetField) {
           const targetType = getNullableType(targetField.type);
-          if (isCompositeType(targetType)) {
+          if (isTableType(targetType)) {
             const fieldRef = getFieldRef(field);
-            const nestedStatements = this.validateInput(fieldType, targetType, module, field =>
-              ts.createPropertyAccess(fieldRef, module.createIdentifier(field.name, field))
+            const targetBlock = optional ? block.newBlock() : block;
+            this.validateInput(targetBlock, fieldType, targetType, field =>
+              ts.createPropertyAccess(fieldRef, block.createIdentifier(field.name, field))
             );
             if (optional) {
-              statements.push(ts.createIf(fieldRef, ts.createBlock(nestedStatements, true)));
-            } else {
-              statements.push(...nestedStatements);
+              block.addStatement(ts.createIf(fieldRef, targetBlock.toBlock()));
             }
           }
         }
       }
     }
-    if (statements.length > 0) {
-      module.addImport(this.config.tsfvModule, this.config.tsfvBinding);
+    if (!block.isEmpty()) {
+      block.module.addImport(this.config.tsfvModule, this.config.tsfvBinding);
     }
-    return statements;
   }
 
-  private declareXid(module: TsModule): ts.Statement {
-    return ts.createVariableStatement(
+  private performInsert(
+    block: TsBlock,
+    context: ts.Expression,
+    inputType: GraphQLInputObjectType,
+    targetTypeInfo: TableTypeInfo
+  ): { idId: ts.Identifier; identityTableMapping: TypeTable } {
+    const { identityTypeInfo } = targetTypeInfo;
+    const targetTableMapping = this.sqlMappings.getIdentityTableForType(targetTypeInfo.type);
+    const identityTableMapping = identityTypeInfo
+      ? this.sqlMappings.getIdentityTableForType(identityTypeInfo.type)
+      : targetTableMapping;
+    if (!identityTableMapping) {
+      throw new Error(`No table mapping for type "${targetTypeInfo.type.name}"`);
+    }
+
+    let xidId;
+    if (targetTypeInfo.externalIdDirective?.name.value === this.config.externalIdDirective) {
+      xidId = block.declareConst(
+        this.config.externalIdName,
+        undefined,
+        ts.createCall(block.module.addImport(this.config.id62Module, this.config.id62Binding), undefined, undefined)
+      );
+    }
+
+    const trxId = block.module.createIdentifier('trx');
+    const trxBlock = block.newBlock();
+
+    const insertProps: ts.ObjectLiteralElementLike[] = [];
+    if (xidId) {
+      insertProps.push(block.createIdPropertyAssignment(this.config.externalIdName, xidId));
+    }
+    // TODO: include @typeDiscriminator property
+    insertProps.push(...this.getInsertProps(block, inputType, identityTableMapping));
+    const queryExpr = this.getInsertExpression(trxId, identityTableMapping.table.name, insertProps);
+    const idId = trxBlock.declareConst(
+      this.config.internalIdName,
       undefined,
-      ts.createVariableDeclarationList(
-        [
-          ts.createVariableDeclaration(
-            module.createIdentifier(this.config.externalIdName),
-            undefined,
-            ts.createCall(module.addImport(this.config.id62Module, this.config.id62Binding), undefined, undefined)
-          )
-        ],
-        ts.NodeFlags.Const
-      )
+      ts.createElementAccess(this.getExecuteExpression(context, queryExpr), 0)
+    );
+
+    if (targetTableMapping && targetTableMapping !== identityTableMapping) {
+      const insertProps: ts.ObjectLiteralElementLike[] = [];
+      const keyParts = targetTableMapping.table.primaryKey.parts;
+      assert(keyParts.length === 1);
+      insertProps.push(ts.createPropertyAssignment(keyParts[0].column.name, idId));
+      insertProps.push(...this.getInsertProps(block, inputType, targetTableMapping));
+      const queryExpr = this.getInsertExpression(trxId, targetTableMapping.table.name, insertProps);
+      trxBlock.addStatement(ts.createExpressionStatement(this.getExecuteExpression(context, queryExpr)));
+    }
+
+    // TODO: insert nested objects into joined tables
+
+    trxBlock.addStatement(ts.createReturn(idId));
+
+    const trxExpr = ts.createAwait(
+      ts.createCall(ts.createPropertyAccess(ts.createPropertyAccess(context, 'knex'), 'transaction'), undefined, [
+        ts.createArrowFunction(
+          [ts.createModifier(ts.SyntaxKind.AsyncKeyword)],
+          undefined,
+          [ts.createParameter(undefined, undefined, undefined, trxId)],
+          undefined,
+          undefined,
+          trxBlock.toBlock()
+        )
+      ])
+    );
+
+    return { idId: block.declareConst(this.config.internalIdName, undefined, trxExpr), identityTableMapping };
+  }
+
+  private getInsertExpression(trx: ts.Expression, table: string, props: ts.ObjectLiteralElementLike[]): ts.Expression {
+    return ts.createCall(
+      ts.createPropertyAccess(ts.createCall(trx, undefined, [ts.createStringLiteral(table)]), 'insert'),
+      undefined,
+      [ts.createObjectLiteral(props, true)]
     );
   }
 
+  private getExecuteExpression(context: ts.Expression, queryExpr: ts.Expression): ts.Expression {
+    return ts.createAwait(
+      ts.createCall(ts.createPropertyAccess(ts.createPropertyAccess(context, 'sqlExecutor'), 'execute'), undefined, [
+        queryExpr
+      ])
+    );
+  }
+
+  private getInsertProps(
+    block: TsBlock,
+    inputType: GraphQLInputObjectType,
+    tableMapping: TypeTable
+  ): ts.ObjectLiteralElementLike[] {
+    const result = [];
+    const targetFields = tableMapping.type.getFields();
+    for (const field of Object.values(inputType.getFields())) {
+      let targetField = targetFields[field.name];
+      if (!targetField && field.name.endsWith('Id')) {
+        targetField = targetFields[field.name.substring(0, field.name.length - 2)];
+      }
+      if (targetField) {
+        const fieldMapping = tableMapping.fieldMappings.get(targetField);
+        if (fieldMapping && isColumns(fieldMapping)) {
+          if (fieldMapping.columns.length === 1) {
+            const id = block.findIdentifierFor(field);
+            if (id) {
+              const { name } = fieldMapping.columns[0];
+              const fieldType = getNullableType(field.type);
+              if (isEnumType(fieldType)) {
+                let expr: ts.Expression = id;
+                let nullable = false;
+                if (!isNonNullType(field.type)) {
+                  const defaultDir = findFirstDirective(targetField, this.config.defaultDirective);
+                  if (defaultDir) {
+                    const def = getRequiredDirectiveArgument(defaultDir, 'value', 'StringValue');
+                    const enumValue = pascalCase((def.value as StringValueNode).value);
+                    const enumValueExpr = ts.createPropertyAccess(
+                      ts.createPropertyAccess(this.schemaNamespaceId, field.type.name),
+                      enumValue
+                    );
+                    expr = ts.createNullishCoalesce(id, enumValueExpr);
+                  } else {
+                    nullable = true;
+                  }
+                }
+                const enumsId = block.module.addNamespaceImport(
+                  path.relative(this.config.resolversDir, this.config.enumMappingsDir),
+                  'enums'
+                );
+                const enumName = `${pascalCase(fieldType.name)}ToSql`;
+                expr = ts.createCall(
+                  ts.createPropertyAccess(ts.createPropertyAccess(enumsId, enumName), 'get'),
+                  undefined,
+                  [expr]
+                );
+                if (nullable) {
+                  expr = ts.createLogicalAnd(id, expr);
+                }
+                result.push(ts.createPropertyAssignment(name, expr));
+              } else {
+                result.push(block.createIdPropertyAssignment(name, id));
+              }
+            }
+          } else {
+            // TODO: handle kind/ID union references
+          }
+        }
+      }
+    }
+    return result;
+  }
+
   private buildConnectionResolver(
-    module: TsModule,
+    block: TsBlock,
     tableMapping: TypeTable,
     {
       argsId,
@@ -604,23 +769,23 @@ export class SqlResolverWriter {
       visitorsId: ts.Identifier;
       returnType: ts.TypeNode;
     }
-  ): ts.Statement[] {
+  ): void {
     const { table, type } = tableMapping;
-    const resolverId = ts.createIdentifier('nodeResolver');
-    const configBody = [];
+    const configBlock = block.newBlock();
+    const resolverId = configBlock.createIdentifier('nodeResolver');
 
     // configure resolver for interface types
     if (isInterfaceType(type)) {
-      const configId = module.addNamedImport(
+      const configId = block.module.addNamedImport(
         path.relative(this.config.resolversDir, `${this.config.fieldVisitorsDir}/${type.name}`),
         `configure${type.name}Resolver`
       );
-      configBody.push(ts.createExpressionStatement(ts.createCall(configId, undefined, [resolverId!])));
+      configBlock.addStatement(ts.createExpressionStatement(ts.createCall(configId, undefined, [resolverId!])));
     }
 
     // order by primary key by default, though it will usual need to be changed
     for (const part of table.primaryKey.parts) {
-      configBody.push(
+      configBlock.addStatement(
         ts.createExpressionStatement(
           ts.createCall(ts.createPropertyAccess(resolverId, 'addOrderBy'), undefined, [
             ts.createStringLiteral(part.column.name),
@@ -630,7 +795,7 @@ export class SqlResolverWriter {
       );
     }
 
-    return [
+    block.addStatement(
       ts.createReturn(
         ts.createAsExpression(
           ts.createCall(
@@ -648,7 +813,11 @@ export class SqlResolverWriter {
                   'walk'
                 ),
                 undefined,
-                [infoId, visitorsId, this.createArrowFunction([this.createSimpleParameter(resolverId)], configBody)]
+                [
+                  infoId,
+                  visitorsId,
+                  this.createArrowFunction([this.createSimpleParameter(resolverId)], configBlock.toBlock())
+                ]
               ),
               'execute'
             ),
@@ -658,69 +827,55 @@ export class SqlResolverWriter {
           returnType
         )
       )
-    ];
+    );
   }
 
   private buildLookupResolver(
-    module: TsModule,
-    field: FieldType,
+    block: TsBlock,
     tableMapping: TypeTable,
-    {
-      argsId,
-      contextId,
-      infoId,
-      visitorsId
-    }: { argsId: ts.Identifier; contextId: ts.Identifier; infoId: ts.Identifier; visitorsId: ts.Identifier }
-  ): ts.Statement[] {
+    { contextId, infoId, visitorsId }: { contextId: ts.Identifier; infoId: ts.Identifier; visitorsId: ts.Identifier }
+  ): { configBlock: TsBlock; resolverId: ts.Identifier; lookupExpr: ts.Expression } {
     const { table, type } = tableMapping;
-    const resolverId = ts.createIdentifier('resolver');
-    const configBody = [];
+    const configBlock = block.newBlock();
+    const resolverId = configBlock.createIdentifier('resolver');
 
     // configure resolver for interface types
     if (isInterfaceType(type)) {
-      const configId = module.addNamedImport(
+      const configId = block.module.addNamedImport(
         path.relative(this.config.resolversDir, `${this.config.fieldVisitorsDir}/${type.name}`),
         `configure${type.name}Resolver`
       );
-      configBody.push(ts.createExpressionStatement(ts.createCall(configId, undefined, [resolverId!])));
+      configBlock.addStatement(ts.createExpressionStatement(ts.createCall(configId, undefined, [resolverId!])));
     }
 
-    // add a placeholder for building query based on arguments
-    let configExpr = ts.createCall(ts.createPropertyAccess(resolverId, 'getBaseQuery'), undefined, []);
-    if ('id' in field.args) {
-      configExpr = ts.createCall(ts.createPropertyAccess(configExpr, 'where'), undefined, [
-        ts.createStringLiteral('xid'),
-        ts.createPropertyAccess(argsId, 'id')
-      ]);
-    }
-    configBody.push(ts.createExpressionStatement(configExpr));
-
-    return [
-      ts.createReturn(
+    const lookupExpr = ts.createCall(
+      ts.createPropertyAccess(
         ts.createCall(
           ts.createPropertyAccess(
             ts.createCall(
               ts.createPropertyAccess(
-                ts.createCall(
-                  ts.createPropertyAccess(
-                    ts.createPropertyAccess(contextId, this.config.contextResolverFactory),
-                    'createQuery'
-                  ),
-                  undefined,
-                  [ts.createStringLiteral(table.name)]
-                ),
-                'walk'
+                ts.createPropertyAccess(contextId, this.config.contextResolverFactory),
+                'createQuery'
               ),
               undefined,
-              [infoId, visitorsId, this.createArrowFunction([this.createSimpleParameter(resolverId)], configBody)]
+              [ts.createStringLiteral(table.name)]
             ),
-            'executeLookup'
+            'walk'
           ),
           undefined,
-          []
-        )
-      )
-    ];
+          [
+            infoId,
+            visitorsId,
+            this.createArrowFunction([this.createSimpleParameter(resolverId)], configBlock.toBlock())
+          ]
+        ),
+        'executeLookup'
+      ),
+      undefined,
+      []
+    );
+
+    return { configBlock, resolverId, lookupExpr };
   }
 
   private async getFieldReturnType(type: GraphQLOutputType): Promise<ts.TypeNode> {
@@ -784,10 +939,7 @@ export class SqlResolverWriter {
 
   private createSchemaTypeRef(name: string | ts.Identifier): ts.TypeReferenceNode {
     let qname: string | ts.EntityName = name;
-    const { schemaNamespaceId } = this;
-    if (schemaNamespaceId) {
-      qname = ts.createQualifiedName(schemaNamespaceId, qname);
-    }
+    qname = ts.createQualifiedName(this.schemaNamespaceId, qname);
     return ts.createTypeReferenceNode(qname, undefined);
   }
 
@@ -795,8 +947,8 @@ export class SqlResolverWriter {
     return ts.createParameter(undefined, undefined, undefined, name, undefined, type);
   }
 
-  private createArrowFunction(parameters: ts.ParameterDeclaration[], statements: ts.Statement[]): ts.ArrowFunction {
-    return ts.createArrowFunction(undefined, undefined, parameters, undefined, undefined, ts.createBlock(statements));
+  private createArrowFunction(parameters: ts.ParameterDeclaration[], body: ts.ConciseBody): ts.ArrowFunction {
+    return ts.createArrowFunction(undefined, undefined, parameters, undefined, undefined, body);
   }
 
   private createIndexModule(resolvers: ResolverInfo[], spread: boolean): TsModule {
@@ -807,7 +959,7 @@ export class SqlResolverWriter {
       const { id } = resolver;
       const idIdentifier = module.addImport(`./${id}`, id);
       properties.push(
-        spread ? ts.createSpreadAssignment(idIdentifier) : ts.createShorthandPropertyAssignment(idIdentifier)
+        spread ? ts.createSpreadAssignment(idIdentifier) : module.createIdPropertyAssignment(id, idIdentifier)
       );
     }
     module.addStatement(ts.createExportDefault(ts.createObjectLiteral(properties, true)));

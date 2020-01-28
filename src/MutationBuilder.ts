@@ -37,6 +37,7 @@ import { Memoize } from 'typescript-memoize';
 import { Analyzer, TypeInfo } from './Analyzer';
 import { DirectiveConfig } from './config/DirectiveConfig';
 import { findFirstDirective, getDirectiveArgument, hasDirectives } from './util/ast-util';
+import { lcFirst, ucFirst } from './util/case';
 import { compare } from './util/compare';
 import { unwrapType, wrapType } from './util/graphql-util';
 
@@ -497,14 +498,6 @@ export class MutationBuilder {
 
 function notNull<T>(t: T | null): t is T {
   return t != null;
-}
-
-function lcFirst(s: string): string {
-  return s.charAt(0).toLowerCase() + s.substring(1);
-}
-
-function ucFirst(s: string): string {
-  return s.charAt(0).toUpperCase() + s.substring(1);
 }
 
 function makeInputValueDefinitionNode(

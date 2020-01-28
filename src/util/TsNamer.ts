@@ -54,6 +54,8 @@ export class TsNamer {
   private nameIdMap = new Map<string, ts.Identifier>();
   private userIdMap = new Map<any, ts.Identifier>();
 
+  public constructor(private readonly outerScope?: TsNamer) {}
+
   public createIdentifier(name: string, user?: any): ts.Identifier {
     if (user) {
       const id = this.userIdMap.get(user);
@@ -80,15 +82,22 @@ export class TsNamer {
   }
 
   public findIdentifier(name: string): ts.Identifier | undefined {
-    return this.nameIdMap.get(name);
+    return this.nameIdMap.get(name) || (this.outerScope && this.outerScope.findIdentifier(name));
   }
 
   public findIdentifierFor(user: any): ts.Identifier | undefined {
-    return this.userIdMap.get(user);
+    return this.userIdMap.get(user) || (this.outerScope && this.outerScope.findIdentifierFor(user));
   }
 
   public createBindingElement(name: string, user?: any, initializer?: ts.Expression): ts.BindingElement {
     const id = this.createIdentifier(name, user);
-    return ts.createBindingElement(undefined, this.findIdentifier(name) !== id ? name : undefined, id, initializer);
+    return ts.createBindingElement(undefined, ts.idText(id) !== name ? name : undefined, id, initializer);
+  }
+
+  public createIdPropertyAssignment(name: string, id?: ts.Identifier): ts.ObjectLiteralElementLike {
+    if (!id) {
+      id = this.createIdentifier(name);
+    }
+    return ts.idText(id) !== name ? ts.createPropertyAssignment(name, id) : ts.createShorthandPropertyAssignment(id);
   }
 }

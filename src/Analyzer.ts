@@ -33,6 +33,10 @@ export type TableType = GraphQLObjectType | GraphQLInterfaceType;
 export type AnalyzedType = GraphQLCompositeType | GraphQLEnumType;
 export type FieldType = GraphQLField<any, any>;
 
+export function isTableType(type: any): type is TableType {
+  return isObjectType(type) || isInterfaceType(type);
+}
+
 export interface TypeField {
   readonly type: TableType;
   readonly field: FieldType;
@@ -78,6 +82,8 @@ export interface TypeInfo<T = AnalyzedType> {
   // node type if this is a connection edge type
   nodeType?: GraphQLNullableType;
 }
+
+export type TableTypeInfo = TypeInfo<TableType>;
 
 export enum EnumValueType {
   INT,
@@ -141,7 +147,7 @@ export class Analyzer {
     return typeInfo;
   }
 
-  public getIdentityTypeInfo(type: TableType): TypeInfo<TableType> {
+  public getIdentityTypeInfo(type: TableType): TableTypeInfo {
     let typeInfo = this.getTypeInfo(type);
     if (typeInfo.identityTypeInfo) {
       typeInfo = typeInfo.identityTypeInfo;
@@ -231,7 +237,7 @@ export class Analyzer {
     }
   }
 
-  private findIdFields(type: TableType): TypeInfo<TableType> {
+  private findIdFields(type: TableType): TableTypeInfo {
     const { config } = this;
     const typeInfo = this.getTypeInfo(type);
     for (const field of Object.values(type.getFields())) {
@@ -296,7 +302,7 @@ export class Analyzer {
             // type implements no interface tables
             break;
           case 1:
-            (typeInfo as TypeInfo<TableType>).identityTypeInfo = intfTables[0];
+            (typeInfo as TableTypeInfo).identityTypeInfo = intfTables[0];
             break;
           default:
             throw new Error(
@@ -308,12 +314,12 @@ export class Analyzer {
         this.analyzeFields(type);
       } else if (isInterfaceType(type)) {
         // check for @sqlTable IDs on implementors
-        if (!(typeInfo as TypeInfo<TableType>).hasTable) {
+        if (!(typeInfo as TableTypeInfo).hasTable) {
           const impls = this.interfaceImplementors.get(type);
           if (impls) {
             const tableIds = this.getTableIds(impls);
             if (tableIds != null) {
-              (typeInfo as TypeInfo<TableType>).tableIds = tableIds;
+              (typeInfo as TableTypeInfo).tableIds = tableIds;
             }
           }
         }
@@ -336,7 +342,7 @@ export class Analyzer {
     return result;
   }
 
-  private analyzeFields(type: TableType): TypeInfo<TableType> {
+  private analyzeFields(type: TableType): TableTypeInfo {
     const typeInfo = this.getTypeInfo(type);
     if (!typeInfo.analyzed) {
       typeInfo.analyzed = true;
@@ -347,7 +353,7 @@ export class Analyzer {
     return typeInfo;
   }
 
-  private analyzeField(typeInfo: TypeInfo<TableType>, field: FieldType, fieldType: GraphQLOutputType): void {
+  private analyzeField(typeInfo: TableTypeInfo, field: FieldType, fieldType: GraphQLOutputType): void {
     const { type } = typeInfo;
     fieldType = getNullableType(fieldType);
     if (isScalarType(fieldType)) {
@@ -476,7 +482,7 @@ export class Analyzer {
     let backrefField: FieldType | null = null;
     let backrefFieldCount = 0;
     nodeType = getNullableType(nodeType);
-    if (isObjectType(nodeType) || isInterfaceType(nodeType)) {
+    if (isTableType(nodeType)) {
       // is there a valid @oneToMany(backrefField) directive?
       const otmDir = findFirstDirective(refField, this.config.oneToManyDirective);
       if (otmDir != null) {
@@ -516,7 +522,7 @@ export class Analyzer {
     refField: FieldType
   ): [FieldType, FieldType][] | null {
     nodeType = getNullableType(nodeType);
-    if (isObjectType(nodeType) || isInterfaceType(nodeType)) {
+    if (isTableType(nodeType)) {
       const otmDir = findFirstDirective(refField, this.config.oneToManyDirective);
       if (otmDir != null) {
         const joinArg = getDirectiveArgument(otmDir, 'backrefJoin');
@@ -567,7 +573,7 @@ export class Analyzer {
       return true;
     }
     // IT <~ IT2 where IT2 has no identity and IT3 contains sole reference(s) to IT2 and id(IT) <~ id(IT3)
-    if (isObjectType(targetType) || isInterfaceType(targetType)) {
+    if (isTableType(targetType)) {
       const containingType = this.findContainingIdentityTable(sourceType);
       if (containingType != null) {
         const identityType = this.getIdentityTypeInfo(targetType).type;

@@ -19,9 +19,63 @@ interface ImportedModule {
   namespaceId?: ts.Identifier;
 }
 
-export class TsModule extends TsNamer {
+export abstract class TsAbstractBlock extends TsNamer {
+  protected readonly statements: ts.Statement[] = [];
+
+  public constructor(outerScope?: TsNamer) {
+    super(outerScope);
+  }
+
+  public abstract get module(): TsModule;
+
+  public addStatement(statement: ts.Statement): void {
+    this.statements.push(statement);
+  }
+
+  public isEmpty(): boolean {
+    return this.statements.length === 0;
+  }
+
+  public toBlock(): ts.Block {
+    return ts.createBlock(this.statements, true);
+  }
+
+  public declareConst(name: string, type?: ts.TypeNode, initializer?: ts.Expression): ts.Identifier;
+  public declareConst<T extends ts.BindingName>(name: T, type?: ts.TypeNode, initializer?: ts.Expression): T;
+  public declareConst(name: string | ts.BindingName, type?: ts.TypeNode, initializer?: ts.Expression): ts.BindingName {
+    if (typeof name === 'string') {
+      name = this.createIdentifier(name);
+    }
+    this.addStatement(
+      ts.createVariableStatement(
+        undefined,
+        ts.createVariableDeclarationList([ts.createVariableDeclaration(name, type, initializer)], ts.NodeFlags.Const)
+      )
+    );
+    return name;
+  }
+}
+
+export class TsBlock extends TsAbstractBlock {
+  public constructor(public readonly module: TsModule, outerScope: TsNamer) {
+    super(outerScope);
+  }
+
+  public newBlock(): TsBlock {
+    return new TsBlock(this.module, this);
+  }
+}
+
+export class TsModule extends TsAbstractBlock {
   private readonly modules = new Map<string, ImportedModule>();
-  private readonly statements: ts.Statement[] = [];
+
+  public get module(): TsModule {
+    return this;
+  }
+
+  public newBlock(): TsBlock {
+    return new TsBlock(this, this);
+  }
 
   public addImport(module: string, binding: string): ts.Identifier {
     const purpose = `${module}.default`;
@@ -79,10 +133,6 @@ export class TsModule extends TsNamer {
       this.modules.set(name, (m = { module: name }));
     }
     return m;
-  }
-
-  public addStatement(statement: ts.Statement): void {
-    this.statements.push(statement);
   }
 
   private buildStatements(): ts.Statement[] {
