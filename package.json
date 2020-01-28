@@ -18,7 +18,8 @@
   "files": [
     "bin",
     "dist",
-    "oclif.manifest.json"
+    "oclif.manifest.json",
+    "sdl"
   ],
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -52,7 +53,7 @@
     "@types/prettier": "^1.19.0",
     "diff": "^4.0.1",
     "graphql": "^14.5.8",
-    "graphql-import": "^0.7.1",
+    "graphql-import": "github:trevorr/graphql-import#v0.7.1-enum-value-directive",
     "pascal-case": "^3.1.1",
     "prettier": "^1.19.1",
     "snake-case": "^3.0.3",

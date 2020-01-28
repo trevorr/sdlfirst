@@ -1,0 +1,220 @@
+"""Indicates fields that define the type's (internal) identity. Typically used for join tables. Implicitly immutable."""
+directive @id on FIELD_DEFINITION
+
+"""Indicates a field containing a type's randomly-generated external identity string. Implicitly read-only."""
+directive @xid on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
+
+"""Indicates a field containing a type's explicitly-specified external identity string. Implicitly immutable."""
+directive @sid(maxLength: Int!) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
+
+"""Indicates a field that has a unique value among all objects of the containing type."""
+directive @unique on FIELD_DEFINITION
+
+"""Indicates the range constraints of a float field."""
+directive @floatRange(
+  """Minimum value."""
+  min: Float
+  """Maximum value."""
+  max: Float
+) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
+
+"""Indicates the range constraints of an integer field."""
+directive @intRange(
+  """Minimum value."""
+  min: Int
+  """Maximum value."""
+  max: Int
+) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
+
+"""Indicates the length constraints of a string field."""
+directive @length(
+  """Minimum valid length. Defaults to 1."""
+  min: Int
+  """Maximum valid length."""
+  max: Int
+) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
+
+"""Provides a regular expression used to validate a string field."""
+directive @regex(value: String!) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
+
+"""Indicates that an enum field of an interface indicates the concrete type of each object. Implicitly read-only."""
+directive @typeDiscriminator on FIELD_DEFINITION
+
+"""Indicates that a Date or DateTime field always contains the creation date of the object. Implicitly read-only."""
+directive @createdAt on FIELD_DEFINITION
+
+"""Indicates that a field can be specified on creation, but not subsequently updated."""
+directive @immutable on FIELD_DEFINITION
+
+"""Indicates that a server-generated field that cannot be set on creation or update."""
+directive @readonly on FIELD_DEFINITION
+
+"""Indicates that a field or type has a derived value that is not directly stored. Implicitly read-only."""
+directive @derived on FIELD_DEFINITION | OBJECT
+
+"""Provides the default value for a field. Non-null fields with a default value are optional on creation."""
+directive @default(value: String!) on FIELD_DEFINITION
+
+"""Indicates that a (non-null) field has a system-provided default value and can be optionally specified on creation."""
+directive @generatedDefault on FIELD_DEFINITION
+
+"""Provides control over the generated create mutation."""
+directive @create (
+  """Use the given input object type for the create argument."""
+  input: String
+  """Use the given output object type for the create result."""
+  payload: String
+) on OBJECT
+
+"""Provides control over the generated update mutation."""
+directive @update (
+  """Use the given input object type for the update argument."""
+  input: String
+  """Use the given output object type for the update result."""
+  payload: String
+) on OBJECT
+
+"""Provides control over the generated delete mutation."""
+directive @delete (
+  """Use the given input object type for the delete argument."""
+  input: String
+  """Use the given output object type for the delete result."""
+  payload: String
+) on OBJECT
+
+"""Specifies use of a nested input object (instead of an ID reference) for an object field in a generated create mutation."""
+directive @createNested (
+  """Use a generated nested input object with the given field implicitly set to the containing object."""
+  this: String
+  """Use the given type for the nested input object."""
+  input: String
+) on FIELD_DEFINITION
+
+"""Specifies use of a nested input object (instead of an ID reference) for an object field in a generated update mutation."""
+directive @updateNested (
+  """Use the given type for the nested input object."""
+  input: String
+) on FIELD_DEFINITION
+
+"""Provides control over the database column generated for a field."""
+directive @sqlColumn(
+  """Specifies the name of the database column used to store the field."""
+  name: String
+) on FIELD_DEFINITION
+
+"""Defines a database index. Used by various @sql directives."""
+input SqlKey {
+  """Specifies the name of the index. The default name is all of the key column names separated by underscores."""
+  name: String
+  """Indicates whether the key must contain unique values."""
+  unique: Boolean
+  """Specifies the names of the columns comprising the key."""
+  columns: [String!]!
+}
+
+"""
+Provides control over the database table generated for an object or interface.
+Interfaces do not generate a table unless this directive is specified.
+"""
+directive @sqlTable(
+  """
+  Specifies a string used to identify the table when a field references a polymorphic type (interface or union).
+  Every object type of such an interface or union must have a unique ID specified using this directive.
+  """
+  id: String
+  """Specifies the name of the database table used to store the type."""
+  name: String
+  """Specifies a set of keys/indexes to create on the table."""
+  keys: [SqlKey!]
+) on OBJECT | INTERFACE
+
+"""
+Specifies the SQL data type to use for a scalar, enum, object, or field.
+Custom scalar types must specify a SQL type on either the scalar definition or all fields of that type.
+Enums default to a varchar with a maximum length of the longest enum value string.
+For enums that specify an integer value with @sqlValue for each enum value, a suitable integer type is used.
+Object types may use @sqlType to model complex SQL types such as spatial types.
+Fields may use the directive to override the default type mapping, if any.
+"""
+directive @sqlType(
+  """Specifies the SQL data type verbatim, such as "decimal(10, 2)"."""
+  type: String!
+  """Specifies the character set to use for a string field."""
+  charset: String
+  """Specifies the collation to use for a string field."""
+  collate: String
+  """Specifies the spatial reference system ID to use for a spatial field."""
+  srid: Int
+) on ENUM | FIELD_DEFINITION | OBJECT | SCALAR
+
+"""
+Specifies the value stored in the database for an enum value.
+All enum values should be either unique integers or strings.
+If this directive is not specified, the GraphQL name is used.
+"""
+directive @sqlValue(
+  """Specifies a unique integer value used to represent this enum value."""
+  int: Int
+  """Specifies a unique string value used to represent this enum value."""
+  string: String
+) on ENUM_VALUE
+
+"""
+Explicitly indicates that a Connection field is a one-to-many relation and defines how the tables are joined.
+A back-reference field can be specified indicating a field in the connection node type that refers back to the containing type.
+For example, if type A has a connection field to nodes of type B and type B contains a field of type A called x,
+the connection field in type A would specify `@oneToMany(backrefField: "x")`.
+If more than one field is needed to specify the join, a back-reference join can be specified that lists pairs of fields
+in each type that should be join. The first field in the pair is the one in the connection node type. If both fields have
+the same name, a single string can be specified instead of a pair.
+For example, if type C has a connection field to nodes of type D and needs to be joined where C.i = D.i and C.j = D.k,
+the connection field in type C would specify `@oneToMany(backrefJoin: [["i"], ["k", "j"]])`.
+Note that back-reference fields cannot have required/non-null arguments.
+If no relation directive is used on a connection field, and the edge type contains no additional fields besides the node
+and the cursor, the default behavior is to look for a single field in the connection node type of the type containing the
+connection field with no required arguments. If such a field is found, it defines a one-to-many relation. Otherwise,
+a many-to-many relation is used based on a new table with a name derived from the connection edge type.
+"""
+directive @oneToMany(
+  """
+  Specifies the name of a field in the connection node type that refers back to the type containing the connection field.
+  For example, if type A has a connection field to nodes of type B and type B contains a field of type A called x,
+  the connection field in type A would specify `@oneToMany(backrefField: "x")`.
+  """
+  backrefField: String
+  """
+  Specifies the pairs of field names used to join the connection node type to the type containing the connection field.
+  For example, if type C has a connection field to nodes of type D and needs to be joined where C.i = D.i and C.j = D.k,
+  the connection field in type C would specify `@oneToMany(backrefJoin: [["i"], ["k", "j"]])`.
+  """
+  backrefJoin: [[String!]!]
+) on FIELD_DEFINITION
+
+"""
+Explicitly indicates that a Connection field is a many-to-many relation based on a new join table.
+Each such join table should have exactly one `@newManyToMany` directive.
+"""
+directive @newManyToMany(
+  """
+  Specifies the name of a new join table for this many-to-many relation.
+  If not specified, the table name is derived from the connection edge type name.
+  If multiple tables and/or multiple fields within a table refer to the same edge type,
+  the table name with be prefixed with the table and/or field name.
+  """
+  tableName: String
+  """
+  Specifies a set of keys/indexes to create on the table.
+  """
+  tableKeys: [SqlKey!]
+) on FIELD_DEFINITION
+
+"""
+Explicitly indicates that a Connection field is a many-to-many relation based on an existing join table.
+The join table should be defined elsewhere (generally on the inverse relation) using a `@newManyToMany` directive.
+"""
+directive @useManyToMany(
+  """
+  Specifies the name of the existing join table for this many-to-many relation.
+  """
+  tableName: String!
+) on FIELD_DEFINITION
