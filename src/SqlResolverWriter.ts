@@ -609,11 +609,8 @@ export class SqlResolverWriter {
     inputType: GraphQLInputObjectType,
     targetTypeInfo: TableTypeInfo
   ): { idId: ts.Identifier; identityTableMapping: TypeTable } {
-    const { identityTypeInfo } = targetTypeInfo;
-    const targetTableMapping = this.sqlMappings.getIdentityTableForType(targetTypeInfo.type);
-    const identityTableMapping = identityTypeInfo
-      ? this.sqlMappings.getIdentityTableForType(identityTypeInfo.type)
-      : targetTableMapping;
+    const { identityTypeInfo = targetTypeInfo } = targetTypeInfo;
+    const identityTableMapping = this.sqlMappings.getIdentityTableForType(identityTypeInfo.type);
     if (!identityTableMapping) {
       throw new Error(`No table mapping for type "${targetTypeInfo.type.name}"`);
     }
@@ -634,7 +631,28 @@ export class SqlResolverWriter {
     if (xidId) {
       insertProps.push(block.createIdPropertyAssignment(this.config.externalIdName, xidId));
     }
-    // TODO: include @typeDiscriminator property
+    const { typeDiscriminatorField } = identityTypeInfo;
+    if (typeDiscriminatorField) {
+      const fieldMapping = identityTableMapping.fieldMappings.get(typeDiscriminatorField);
+      if (fieldMapping && isColumns(fieldMapping)) {
+        const enumsId = block.module.addNamespaceImport(
+          path.relative(this.config.resolversDir, this.config.enumMappingsDir),
+          'enums'
+        );
+        const enumName = getNamedType(typeDiscriminatorField.type).name;
+        const enumValue = ts.createPropertyAccess(
+          ts.createPropertyAccess(this.schemaNamespaceId, enumName),
+          targetTypeInfo.type.name
+        );
+        const enumToSqlName = `${pascalCase(enumName)}ToSql`;
+        const sqlValue = ts.createCall(
+          ts.createPropertyAccess(ts.createPropertyAccess(enumsId, enumToSqlName), 'get'),
+          undefined,
+          [enumValue]
+        );
+        insertProps.push(ts.createPropertyAssignment(fieldMapping.columns[0].name, sqlValue));
+      }
+    }
     insertProps.push(...this.getInsertProps(block, inputType, identityTableMapping));
     const queryExpr = this.getInsertExpression(trxId, identityTableMapping.table.name, insertProps);
     const idId = trxBlock.declareConst(
@@ -643,7 +661,8 @@ export class SqlResolverWriter {
       ts.createElementAccess(this.getExecuteExpression(context, queryExpr), 0)
     );
 
-    if (targetTableMapping && targetTableMapping !== identityTableMapping) {
+    const targetTableMapping = this.sqlMappings.getIdentityTableForType(targetTypeInfo.type);
+    if (targetTableMapping && targetTypeInfo !== identityTypeInfo) {
       const insertProps: ts.ObjectLiteralElementLike[] = [];
       const keyParts = targetTableMapping.table.primaryKey.parts;
       assert(keyParts.length === 1);
