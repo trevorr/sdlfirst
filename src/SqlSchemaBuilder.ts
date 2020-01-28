@@ -475,7 +475,7 @@ export class SqlSchemaBuilder {
         throw new Error(`Expected ListValue for @${this.config.sqlTableDirective}.columns`);
       }
       const columnNames = (columnsField.value as ListValueNode).values.map(v => (v as StringValueNode).value);
-      const name = keyName || columnNames[0];
+      const name = keyName || columnNames.join('_');
       if (!table.keys.find(key => key.name === name)) {
         table.keys.push({
           name,
