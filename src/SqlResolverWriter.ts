@@ -28,8 +28,14 @@ import { Analyzer, FieldType, isTableType, TableType, TableTypeInfo } from './An
 import { defaultConfig as defaultPathConfig, defaultConfig as defaultSqlConfig, SqlConfig } from './config/SqlConfig';
 import { CLIENT_MUTATION_ID } from './MutationBuilder';
 import { isColumns, SqlSchemaMappings, TypeTable } from './SqlSchemaBuilder';
-import { findFirstDirective, getDirectiveArgument, getRequiredDirectiveArgument } from './util/ast-util';
-import { lcFirst } from './util/case';
+import {
+  findFirstDirective,
+  getDirectiveArgument,
+  getRequiredDirectiveArgument,
+  hasDirective,
+  hasDirectives
+} from './util/ast-util';
+import { lcFirst, ucFirst } from './util/case';
 import { compare } from './util/compare';
 import { mkdir } from './util/fs-util';
 import { defaultConfig as defaultFormatterConfig, TsFormatter, TsFormatterConfig } from './util/TsFormatter';
@@ -267,7 +273,7 @@ export class SqlResolverWriter {
         const targetType = targetTypeInfo.type;
         switch (field.name.substring(0, 6)) {
           case 'create':
-            this.destructureInput(block, argsId, inputType, targetType);
+            this.destructureInput(block, argsId, inputType);
             this.validateInput(block, inputType, targetType);
             const { idId, identityTableMapping } = this.performInsert(block, contextId, inputType, targetTypeInfo);
 
@@ -305,7 +311,7 @@ export class SqlResolverWriter {
             );
             break;
           case 'update':
-            this.destructureInput(block, argsId, inputType, targetType);
+            this.destructureInput(block, argsId, inputType);
             this.ensureModification(block, inputType, targetType);
             this.validateInput(block, inputType, targetType);
             // TODO: perform update(s), obtain internal ID
@@ -319,7 +325,7 @@ export class SqlResolverWriter {
             );
             break;
           case 'delete':
-            this.destructureInput(block, argsId, inputType, targetType);
+            this.destructureInput(block, argsId, inputType);
             // TODO: delete object(s), if exist
             // TODO: return mutation ID and deleted flag
             block.addStatement(
@@ -422,20 +428,25 @@ export class SqlResolverWriter {
     }
   }
 
-  private destructureInput(
-    block: TsBlock,
-    argsId: ts.Identifier,
-    inputType: GraphQLInputObjectType,
-    targetType: TableType
-  ): void {
+  private destructureInput(block: TsBlock, argsId: ts.Identifier, inputType: GraphQLInputObjectType): void {
     block.declareConst(
       ts.createObjectBindingPattern(
         Object.values(inputType.getFields()).map(field => {
-          const targetField = this.findTargetField(field, targetType);
-          if (targetField) {
-            const dir = this.getExternalId(targetField);
-            if (dir) {
-              return ts.createBindingElement(undefined, field.name, block.createIdentifier(dir.name.value, field));
+          let idSuffix;
+          if (hasDirectives(field, [this.config.stringIdDirective, this.config.stringIdRefDirective])) {
+            idSuffix = this.config.stringIdName;
+          } else if (hasDirective(field, this.config.externalIdRefDirective)) {
+            idSuffix = this.config.externalIdName;
+          }
+          if (idSuffix) {
+            let binding;
+            if (field.name === 'id') {
+              binding = idSuffix;
+            } else if (field.name.endsWith('Id')) {
+              binding = field.name.substring(0, field.name.length - 2) + ucFirst(idSuffix);
+            }
+            if (binding) {
+              return ts.createBindingElement(undefined, field.name, block.createIdentifier(binding, field));
             }
           }
           return block.createBindingElement(field.name, field);

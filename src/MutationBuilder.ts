@@ -501,16 +501,38 @@ export class MutationBuilder {
     if (deleteType === undefined) {
       const typeInfo = this.analyzer.findTypeInfo(type);
       if (typeInfo && typeInfo.externalIdField) {
-        deleteType = new GraphQLInputObjectType({
-          name: `Delete${type.name}Input`,
-          description: `Automatically generated input type for ${this.mutationTypeName}.delete${type.name}`,
-          fields: {
-            [CLIENT_MUTATION_ID]: {
-              type: GraphQLString
-            },
-            [typeInfo.externalIdField.name]: {
-              type: new GraphQLNonNull(assertScalarType(getNullableType(typeInfo.externalIdField.type)))
+        const { externalIdField } = typeInfo;
+        const externalIdType = new GraphQLNonNull(assertScalarType(getNullableType(externalIdField.type)));
+        const fields: [string, GraphQLInputFieldConfig][] = [
+          [
+            CLIENT_MUTATION_ID,
+            { type: GraphQLString, astNode: makeInputValueDefinitionNode(CLIENT_MUTATION_ID, GraphQLString) }
+          ],
+          [
+            externalIdField.name,
+            {
+              type: externalIdType,
+              astNode: makeInputValueDefinitionNode(externalIdField.name, externalIdType, [
+                this.getExternalIdRefDirective(typeInfo.externalIdDirective!, type.name)!
+              ])
             }
+          ]
+        ];
+        const name = `Delete${type.name}Input`;
+        const description = `Automatically generated input type for ${this.mutationTypeName}.delete${type.name}`;
+        deleteType = new GraphQLInputObjectType({
+          name,
+          description,
+          fields: Object.fromEntries(fields),
+          astNode: {
+            kind: 'InputObjectTypeDefinition',
+            name: makeNameNode(name),
+            description: {
+              kind: 'StringValue',
+              value: description,
+              block: true
+            },
+            fields: fields.map(f => f[1].astNode!)
           }
         });
       } else {
