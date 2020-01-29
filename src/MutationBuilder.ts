@@ -233,7 +233,7 @@ export class MutationBuilder {
     }
 
     let inputType;
-    let extIdDirective;
+    let inputDirective;
     const createDir = findFirstDirective(field, this.config.createNestedDirective);
     if (createDir) {
       const inputArg = getDirectiveArgument(createDir, 'input');
@@ -277,7 +277,7 @@ export class MutationBuilder {
         const typeInfo = this.analyzer.findTypeInfo(type);
         if (typeInfo && typeInfo.externalIdField) {
           inputType = assertScalarType(getNullableType(typeInfo.externalIdField.type));
-          extIdDirective = typeInfo.externalIdDirective;
+          inputDirective = this.getExternalIdRefDirective(typeInfo.externalIdDirective!, type.name);
           name += 'Id';
         } else if (isObjectType(type)) {
           inputType = this.getCreateType(type, true);
@@ -288,7 +288,7 @@ export class MutationBuilder {
           const objectTypes = isInterfaceType(type) ? this.analyzer.getImplementingTypes(type) : type.getTypes();
           try {
             inputType = this.getExternalIdType(objectTypes);
-            extIdDirective = this.getExternalIdDirective(objectTypes);
+            inputDirective = this.getExternalIdRefDirective(this.getExternalIdDirective(objectTypes)!, type.name);
             name += 'Id';
           } catch (e) {
             throw new Error(`Cannot convert type "${type.name}" to input type for field "${field.name}": ${e.message}`);
@@ -296,7 +296,7 @@ export class MutationBuilder {
         }
       } else {
         inputType = type;
-        extIdDirective = findFirstDirective(field, this.config.stringIdDirective);
+        inputDirective = findFirstDirective(field, this.config.stringIdDirective);
       }
     }
 
@@ -304,8 +304,7 @@ export class MutationBuilder {
     if (nonNull) {
       inputType = new GraphQLNonNull(inputType);
     }
-    const refDirective = extIdDirective && this.getExternalIdRefDirective(extIdDirective, getNamedType(type).name);
-    const astNode = makeInputValueDefinitionNode(name, inputType, refDirective && [refDirective]);
+    const astNode = makeInputValueDefinitionNode(name, inputType, inputDirective && [inputDirective]);
     return [name, { type: inputType, astNode }];
   }
 

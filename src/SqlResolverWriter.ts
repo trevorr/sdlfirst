@@ -532,7 +532,9 @@ export class SqlResolverWriter {
         const targetField = this.findTargetField(field, targetType) || field;
         switch (fieldType.name) {
           case 'ID':
-            const sidDir = findFirstDirective(field, this.config.stringIdRefDirective);
+            const sidDir =
+              findFirstDirective(field, this.config.stringIdDirective) ||
+              findFirstDirective(field, this.config.stringIdRefDirective);
             expr = getRangeValidator(expr, sidDir, 'string', {
               betweenMethod: 'length',
               equalMethod: 'length',
