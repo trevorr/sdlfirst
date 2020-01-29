@@ -290,7 +290,12 @@ export class SqlResolverWriter {
                     'where'
                   ),
                   undefined,
-                  [ts.createStringLiteral(this.config.internalIdName), idId]
+                  [
+                    ts.createCall(ts.createPropertyAccess(resolverId, 'qualifyColumn'), undefined, [
+                      ts.createStringLiteral(this.config.internalIdName)
+                    ]),
+                    idId
+                  ]
                 )
               )
             );
