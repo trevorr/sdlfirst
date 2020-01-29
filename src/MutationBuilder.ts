@@ -1,6 +1,10 @@
+import fs from 'fs';
 import {
+  ArgumentNode,
   assertScalarType,
+  buildASTSchema,
   DirectiveNode,
+  getNamedType,
   getNullableType,
   GraphQLBoolean,
   GraphQLField,
@@ -30,9 +34,11 @@ import {
   NamedTypeNode,
   NameNode,
   NonNullTypeNode,
+  parse,
   StringValueNode,
   TypeNode
 } from 'graphql';
+import path from 'path';
 import { Memoize } from 'typescript-memoize';
 import { Analyzer, TypeInfo } from './Analyzer';
 import { DirectiveConfig } from './config/DirectiveConfig';
@@ -76,6 +82,18 @@ export class MutationBuilder {
     const crudMutations = this.generateMutations();
     mutationConfig.fields = Object.fromEntries(Object.entries(mutationConfig.fields).concat(crudMutations));
     schemaConfig.mutation = new GraphQLObjectType(mutationConfig);
+
+    // ensure resulting schema includes input directives not used by original schema
+    const directivesSource = fs.readFileSync(path.join(path.dirname(__dirname), 'sdl', 'directives.graphql'), {
+      encoding: 'utf8'
+    });
+    const directivesAst = parse(directivesSource);
+    const directivesSchema = buildASTSchema(directivesAst);
+    const existingDirectiveNames = new Set(schemaConfig.directives.map(d => d.name));
+    schemaConfig.directives = schemaConfig.directives.concat(
+      directivesSchema.getDirectives().filter(d => !existingDirectiveNames.has(d.name))
+    );
+
     return new GraphQLSchema(schemaConfig);
   }
 
@@ -215,7 +233,7 @@ export class MutationBuilder {
     }
 
     let inputType;
-    let inputDirective;
+    let extIdDirective;
     const createDir = findFirstDirective(field, this.config.createNestedDirective);
     if (createDir) {
       const inputArg = getDirectiveArgument(createDir, 'input');
@@ -259,7 +277,7 @@ export class MutationBuilder {
         const typeInfo = this.analyzer.findTypeInfo(type);
         if (typeInfo && typeInfo.externalIdField) {
           inputType = assertScalarType(getNullableType(typeInfo.externalIdField.type));
-          inputDirective = typeInfo.externalIdDirective;
+          extIdDirective = typeInfo.externalIdDirective;
           name += 'Id';
         } else if (isObjectType(type)) {
           inputType = this.getCreateType(type, true);
@@ -270,7 +288,7 @@ export class MutationBuilder {
           const objectTypes = isInterfaceType(type) ? this.analyzer.getImplementingTypes(type) : type.getTypes();
           try {
             inputType = this.getExternalIdType(objectTypes);
-            inputDirective = this.getExternalIdDirective(objectTypes);
+            extIdDirective = this.getExternalIdDirective(objectTypes);
             name += 'Id';
           } catch (e) {
             throw new Error(`Cannot convert type "${type.name}" to input type for field "${field.name}": ${e.message}`);
@@ -278,6 +296,7 @@ export class MutationBuilder {
         }
       } else {
         inputType = type;
+        extIdDirective = findFirstDirective(field, this.config.stringIdDirective);
       }
     }
 
@@ -285,7 +304,8 @@ export class MutationBuilder {
     if (nonNull) {
       inputType = new GraphQLNonNull(inputType);
     }
-    const astNode = makeInputValueDefinitionNode(name, inputType, inputDirective ? [inputDirective] : undefined);
+    const refDirective = extIdDirective && this.getExternalIdRefDirective(extIdDirective, getNamedType(type).name);
+    const astNode = makeInputValueDefinitionNode(name, inputType, refDirective && [refDirective]);
     return [name, { type: inputType, astNode }];
   }
 
@@ -305,7 +325,7 @@ export class MutationBuilder {
             {
               type: externalIdType,
               astNode: makeInputValueDefinitionNode(externalIdField.name, externalIdType, [
-                typeInfo?.externalIdDirective!
+                this.getExternalIdRefDirective(typeInfo?.externalIdDirective!, type.name)!
               ])
             }
           ]);
@@ -359,7 +379,7 @@ export class MutationBuilder {
     }
 
     let inputType;
-    let inputDirective;
+    let extIdDirective;
     const updateDir = findFirstDirective(field, this.config.updateNestedDirective);
     if (updateDir) {
       const inputArg = getDirectiveArgument(updateDir, 'input');
@@ -379,7 +399,7 @@ export class MutationBuilder {
         const typeInfo = this.analyzer.findTypeInfo(type);
         if (typeInfo && typeInfo.externalIdField) {
           inputType = assertScalarType(getNullableType(typeInfo.externalIdField.type));
-          inputDirective = typeInfo.externalIdDirective;
+          extIdDirective = typeInfo.externalIdDirective;
           name += 'Id';
         } else if (isObjectType(type)) {
           inputType = this.getUpdateType(type, true);
@@ -390,7 +410,7 @@ export class MutationBuilder {
           const objectTypes = isInterfaceType(type) ? this.analyzer.getImplementingTypes(type) : type.getTypes();
           try {
             inputType = this.getExternalIdType(objectTypes);
-            inputDirective = this.getExternalIdDirective(objectTypes);
+            extIdDirective = this.getExternalIdDirective(objectTypes);
             name += 'Id';
           } catch (e) {
             throw new Error(`Cannot convert type "${type.name}" to input type for field "${field.name}": ${e.message}`);
@@ -402,8 +422,40 @@ export class MutationBuilder {
     }
 
     inputType = wrapType(inputType, wrapped.wrappers) as GraphQLInputType;
-    const astNode = makeInputValueDefinitionNode(name, inputType, inputDirective ? [inputDirective] : undefined);
+    const refDirective = extIdDirective && this.getExternalIdRefDirective(extIdDirective, getNamedType(type).name);
+    const astNode = makeInputValueDefinitionNode(name, inputType, refDirective && [refDirective]);
     return [name, { type: inputType, astNode }];
+  }
+
+  private getExternalIdRefDirective(originalDirective: DirectiveNode, type: string): DirectiveNode | undefined {
+    let name;
+    const args: ArgumentNode[] = [];
+    switch (originalDirective.name.value) {
+      case this.config.externalIdDirective:
+        name = this.config.externalIdRefDirective;
+        break;
+      case this.config.stringIdDirective:
+        name = this.config.stringIdRefDirective;
+        if (originalDirective.arguments) {
+          args.push(...originalDirective.arguments);
+        }
+        break;
+      default:
+        return undefined;
+    }
+    args.push({
+      kind: 'Argument',
+      name: makeNameNode('type'),
+      value: {
+        kind: 'StringValue',
+        value: type
+      }
+    });
+    return {
+      kind: 'Directive',
+      name: makeNameNode(name),
+      arguments: args
+    };
   }
 
   private getExternalIdDirective(objectTypes: Iterable<GraphQLObjectType>): DirectiveNode | undefined {

@@ -428,11 +428,10 @@ export class SqlResolverWriter {
     inputType: GraphQLInputObjectType,
     targetType: TableType
   ): void {
-    const targetFields = targetType.getFields();
     block.declareConst(
       ts.createObjectBindingPattern(
         Object.values(inputType.getFields()).map(field => {
-          const targetField = targetFields[field.name];
+          const targetField = this.findTargetField(field, targetType);
           if (targetField) {
             const dir = this.getExternalId(targetField);
             if (dir) {
@@ -445,6 +444,15 @@ export class SqlResolverWriter {
       undefined,
       ts.createPropertyAccess(argsId, 'input')
     );
+  }
+
+  private findTargetField(field: GraphQLInputField, targetType: TableType): FieldType | undefined {
+    const targetFields = targetType.getFields();
+    let targetField = targetFields[field.name];
+    if (!targetField && field.name.endsWith('Id')) {
+      targetField = targetFields[field.name.substring(0, field.name.length - 2)];
+    }
+    return targetField;
   }
 
   private ensureModification(block: TsBlock, inputType: GraphQLInputObjectType, targetType: TableType): void {
@@ -474,9 +482,8 @@ export class SqlResolverWriter {
     getFieldRef: (field: GraphQLInputField) => ts.Expression = field => block.createIdentifier(field.name, field),
     output: ts.Expression[] = []
   ): ts.Expression[] {
-    const targetFields = targetType.getFields();
     for (const field of Object.values(inputType.getFields())) {
-      const targetField = targetFields[field.name];
+      const targetField = this.findTargetField(field, targetType);
       if (field.name === CLIENT_MUTATION_ID || (targetField && this.getExternalId(targetField))) continue;
       const fieldType = getNullableType(field.type);
       const fieldRef = getFieldRef(field);
@@ -516,17 +523,16 @@ export class SqlResolverWriter {
     targetType: TableType,
     getFieldRef: (field: GraphQLInputField) => ts.Expression = field => block.createIdentifier(field.name, field)
   ): void {
-    const targetFields = targetType.getFields();
     const tsfvId = ts.createIdentifier(this.config.tsfvBinding);
     for (const field of Object.values(inputType.getFields())) {
       const fieldType = getNullableType(field.type);
       const optional = !isNonNullType(field.type);
       let expr: ts.Expression = tsfvId;
       if (isScalarType(fieldType)) {
-        const targetField = targetFields[field.name] || field;
+        const targetField = this.findTargetField(field, targetType) || field;
         switch (fieldType.name) {
           case 'ID':
-            const sidDir = findFirstDirective(targetField, this.config.stringIdDirective);
+            const sidDir = findFirstDirective(field, this.config.stringIdRefDirective);
             expr = getRangeValidator(expr, sidDir, 'string', {
               betweenMethod: 'length',
               equalMethod: 'length',
@@ -535,11 +541,15 @@ export class SqlResolverWriter {
               maxArgName: 'maxLength',
               defaultMin: '1'
             });
-            const xidDir = findFirstDirective(targetField, this.config.externalIdDirective);
+            const xidDir = findFirstDirective(field, this.config.externalIdRefDirective);
             if (xidDir) {
-              expr = ts.createCall(ts.createPropertyAccess(expr, 'pattern'), undefined, [
-                ts.createRegularExpressionLiteral('/[0-9A-Za-z]{21}/')
-              ]);
+              // xids should be /([A-Z]{1,4}_)?[0-9A-Za-z]{21}/
+              // but strict validation isn't necessary due to database lookup
+              expr = getRangeValidator(expr, xidDir, 'string', {
+                betweenMethod: 'length',
+                defaultMin: '21',
+                defaultMax: '26'
+              });
             }
             break;
           case 'String':
@@ -582,7 +592,7 @@ export class SqlResolverWriter {
           );
         }
       } else if (isInputObjectType(fieldType)) {
-        const targetField = targetFields[field.name];
+        const targetField = this.findTargetField(field, targetType);
         if (targetField) {
           const targetType = getNullableType(targetField.type);
           if (isTableType(targetType)) {
@@ -714,12 +724,8 @@ export class SqlResolverWriter {
     tableMapping: TypeTable
   ): ts.ObjectLiteralElementLike[] {
     const result = [];
-    const targetFields = tableMapping.type.getFields();
     for (const field of Object.values(inputType.getFields())) {
-      let targetField = targetFields[field.name];
-      if (!targetField && field.name.endsWith('Id')) {
-        targetField = targetFields[field.name.substring(0, field.name.length - 2)];
-      }
+      const targetField = this.findTargetField(field, tableMapping.type);
       if (targetField) {
         const fieldMapping = tableMapping.fieldMappings.get(targetField);
         if (fieldMapping && isColumns(fieldMapping)) {

@@ -6,6 +6,7 @@ export interface DirectiveConfig {
   deleteDirective: string;
   derivedDirective: string;
   externalIdDirective: string;
+  externalIdRefDirective: string;
   floatRangeDirective: string;
   generatedDefaultDirective: string;
   immutableDirective: string;
@@ -21,6 +22,7 @@ export interface DirectiveConfig {
   sqlTypeDirective: string;
   sqlValueDirective: string;
   stringIdDirective: string;
+  stringIdRefDirective: string;
   typeDiscriminatorDirective: string;
   uniqueDirective: string;
   updatedAtDirective: string;
@@ -37,6 +39,7 @@ export const defaultConfig: DirectiveConfig = {
   deleteDirective: 'delete',
   derivedDirective: 'derived',
   externalIdDirective: 'xid',
+  externalIdRefDirective: 'xidRef',
   floatRangeDirective: 'floatRange',
   generatedDefaultDirective: 'generatedDefault',
   immutableDirective: 'immutable',
@@ -52,6 +55,7 @@ export const defaultConfig: DirectiveConfig = {
   sqlTypeDirective: 'sqlType',
   sqlValueDirective: 'sqlValue',
   stringIdDirective: 'sid',
+  stringIdRefDirective: 'sidRef',
   typeDiscriminatorDirective: 'typeDiscriminator',
   uniqueDirective: 'unique',
   updatedAtDirective: 'updatedAt',

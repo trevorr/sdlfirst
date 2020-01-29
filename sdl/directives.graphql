@@ -2,10 +2,33 @@
 directive @id on FIELD_DEFINITION
 
 """Indicates a field containing a type's randomly-generated external identity string. Implicitly read-only."""
-directive @xid on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
+directive @xid on FIELD_DEFINITION
+
+"""Indicates that an input field's type is a randomly-generated external identity string referring to an object of the given type."""
+directive @xidRef(
+  """
+  The type of object to which the ID field refers.
+  It must be an object or interface containing a @xid field or a union of objects that do.
+  """
+  type: String!
+) on INPUT_FIELD_DEFINITION
 
 """Indicates a field containing a type's explicitly-specified external identity string. Implicitly immutable."""
-directive @sid(maxLength: Int!) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
+directive @sid(
+  """The maximum length of the ID."""
+  maxLength: Int!
+) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
+
+"""Indicates that an input field's type is an explicitly-specified external identity string referring to an object of the given type."""
+directive @sidRef(
+  """The maximum length of the ID."""
+  maxLength: Int!
+  """
+  The type of object to which the ID field refers.
+  It must be an object or interface containing a @sid field or a union of objects that do.
+  """
+  type: String!
+) on INPUT_FIELD_DEFINITION
 
 """Indicates a field that has a unique value among all objects of the containing type."""
 directive @unique on FIELD_DEFINITION
