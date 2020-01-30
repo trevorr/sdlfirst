@@ -25,6 +25,7 @@ import { TsModule } from './util/TsModule';
 const EdgesVisitorsType = 'EdgesVisitors';
 const FieldVisitorsType = 'FieldVisitors';
 const SqlQueryResolverType = 'SqlQueryResolver';
+const TypeVisitorsType = 'TypeVisitors';
 const VisitorsConst = 'Visitors';
 
 export interface FieldVisitorConfig extends SqlConfig, TsFormatterConfig {
@@ -53,7 +54,6 @@ interface VisitorInfo {
 export class FieldVisitorWriter {
   private readonly config: Readonly<FieldVisitorConfig>;
   private readonly visitors: VisitorInfo[] = [];
-  private readonly gqlsqlNamespaceId: ts.Identifier;
   private readonly formatter: TsFormatter;
 
   constructor(
@@ -62,9 +62,6 @@ export class FieldVisitorWriter {
     config?: Partial<FieldVisitorConfig>
   ) {
     this.config = Object.freeze(Object.assign({}, defaultConfig, analyzer.getConfig(), config));
-
-    this.gqlsqlNamespaceId = ts.createIdentifier(this.config.gqlsqlNamespace);
-
     this.formatter = new TsFormatter(config);
   }
 
@@ -96,11 +93,7 @@ export class FieldVisitorWriter {
     }
 
     const module = new TsModule();
-
-    const { gqlsqlModule: gqlsqlModule, gqlsqlNamespace: gqlsqlNamespace } = this.config;
-    if (gqlsqlModule && gqlsqlNamespace) {
-      module.addNamespaceImport(gqlsqlModule, gqlsqlNamespace);
-    }
+    const gqlsqlId = module.addNamespaceImport(this.config.gqlsqlModule, this.config.gqlsqlNamespace);
 
     const typeInfo = this.analyzer.getTypeInfo(tableMapping.type);
     const { identityTypeInfo } = typeInfo;
@@ -119,7 +112,7 @@ export class FieldVisitorWriter {
     const properties: ts.ObjectLiteralElementLike[] = [];
 
     if (isEdgeType) {
-      properties.push(ts.createSpreadAssignment(ts.createPropertyAccess(this.gqlsqlNamespaceId, EdgesVisitorsType)));
+      properties.push(ts.createSpreadAssignment(ts.createPropertyAccess(gqlsqlId, EdgesVisitorsType)));
     }
 
     const { table, fieldMappings } = tableMapping;
@@ -183,7 +176,7 @@ export class FieldVisitorWriter {
         const callParams: ts.Expression[] = [
           ts.createPropertyAccess(infoId, 'fieldName'),
           joinSpec,
-          ts.createCall(ts.createPropertyAccess(this.gqlsqlNamespaceId, 'resolveArguments'), undefined, [infoId])
+          ts.createCall(ts.createPropertyAccess(gqlsqlId, 'resolveArguments'), undefined, [infoId])
         ];
         const nodeResolverId = ts.createIdentifier('nodeResolver');
         const configStatements = [];
@@ -310,28 +303,16 @@ export class FieldVisitorWriter {
     if (!properties.length) return;
 
     const sqlQueryResolverType = ts.createTypeReferenceNode(
-      ts.createQualifiedName(this.gqlsqlNamespaceId, SqlQueryResolverType),
+      ts.createQualifiedName(gqlsqlId, SqlQueryResolverType),
       undefined
     );
-    module.addStatement(
-      ts.createVariableStatement(
-        undefined,
-        ts.createVariableDeclarationList(
-          [
-            ts.createVariableDeclaration(
-              VisitorsConst,
-              ts.createTypeReferenceNode(ts.createQualifiedName(this.gqlsqlNamespaceId, FieldVisitorsType), [
-                sqlQueryResolverType
-              ]),
-              ts.createObjectLiteral(properties, true)
-            )
-          ],
-          ts.NodeFlags.Const
-        )
-      )
+    const visitorsId = module.declareConst(
+      VisitorsConst,
+      ts.createTypeReferenceNode(ts.createQualifiedName(gqlsqlId, FieldVisitorsType), [sqlQueryResolverType]),
+      ts.createObjectLiteral(properties, true)
     );
 
-    let defaultExpr: ts.Expression = ts.createIdentifier(VisitorsConst);
+    let defaultExpr: ts.Expression = visitorsId;
     if (identityVisitorsId) {
       defaultExpr = ts.createCall(ts.createPropertyAccess(ts.createIdentifier('Object'), 'assign'), undefined, [
         ts.createObjectLiteral(),
@@ -656,7 +637,12 @@ export class FieldVisitorWriter {
       const idIdentifier = module.addImport(`./${id}`, id);
       properties.push(ts.createShorthandPropertyAssignment(idIdentifier));
     }
-    module.addStatement(ts.createExportDefault(ts.createObjectLiteral(properties, true)));
+    const gqlsqlId = module.addNamespaceImport(this.config.gqlsqlModule, this.config.gqlsqlNamespace);
+    const visitorsType = ts.createTypeReferenceNode(ts.createQualifiedName(gqlsqlId, TypeVisitorsType), [
+      ts.createTypeReferenceNode(ts.createQualifiedName(gqlsqlId, SqlQueryResolverType), undefined)
+    ]);
+    const visitorsId = module.declareConst(VisitorsConst, visitorsType, ts.createObjectLiteral(properties, true));
+    module.addStatement(ts.createExportDefault(visitorsId));
     return module;
   }
 
