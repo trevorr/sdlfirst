@@ -71,6 +71,7 @@ export class FieldVisitorWriter {
   public async writeVisitors(): Promise<string[]> {
     const { baseDir, fieldVisitorsDir } = this.config;
     await mkdir(path.join(baseDir, fieldVisitorsDir), { recursive: true });
+    // TODO: generate visitors for union, connection-only, and SQL object types
     for (const tableMapping of this.sqlMappings.tables) {
       await this.writeVisitor(tableMapping);
     }

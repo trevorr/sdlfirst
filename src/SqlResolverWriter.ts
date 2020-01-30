@@ -110,6 +110,18 @@ enum RootType {
   Mutation = 2
 }
 
+interface ResolverNodes {
+  argsId: ts.Identifier;
+  contextId: ts.Identifier;
+  infoId: ts.Identifier;
+  visitorsId: ts.Identifier;
+  returnType: ts.TypeNode;
+}
+
+interface ResolverTransactionNodes extends ResolverNodes {
+  trxId: ts.Identifier;
+}
+
 export class SqlResolverWriter {
   private readonly config: SqlResolverConfig;
   private readonly resolvedTypes = new Set<GraphQLNamedType>();
@@ -259,6 +271,13 @@ export class SqlResolverWriter {
         this.createSimpleParameter(infoId, ts.createTypeReferenceNode(infoTypeId, undefined))
       ];
       const returnType = ts.createTypeReferenceNode(PromiseType, [await this.getFieldReturnType(field.type)]);
+      const resolverNodes = {
+        argsId,
+        contextId,
+        infoId,
+        visitorsId,
+        returnType
+      };
 
       const block = module.newBlock();
       const fieldType = getNamedType(field.type);
@@ -275,13 +294,13 @@ export class SqlResolverWriter {
           case 'create':
             this.destructureInput(block, argsId, inputType);
             this.validateInput(block, inputType, targetType);
-            const { idId, identityTableMapping } = this.performInsert(block, contextId, inputType, targetTypeInfo);
+            const { idId, identityTableMapping } = this.performInsert(block, resolverNodes, inputType, targetTypeInfo);
 
-            const { configBlock, resolverId, lookupExpr } = this.buildLookupResolver(block, identityTableMapping, {
-              contextId,
-              infoId,
-              visitorsId
-            });
+            const { configBlock, resolverId, lookupExpr } = this.buildLookupResolver(
+              block,
+              identityTableMapping,
+              resolverNodes
+            );
             configBlock.addStatement(
               ts.createExpressionStatement(
                 ts.createCall(
@@ -347,13 +366,7 @@ export class SqlResolverWriter {
         if (isTableType(nodeType)) {
           const tableMapping = this.sqlMappings.getIdentityTableForType(nodeType);
           if (tableMapping) {
-            this.buildConnectionResolver(block, tableMapping, {
-              argsId,
-              contextId,
-              infoId,
-              visitorsId,
-              returnType
-            });
+            this.buildConnectionResolver(block, tableMapping, resolverNodes);
           } else {
             console.log(`TODO: No table mapping for node type ${nodeType.name}`);
           }
@@ -363,11 +376,7 @@ export class SqlResolverWriter {
       } else if (isTableType(fieldType)) {
         const tableMapping = this.sqlMappings.getIdentityTableForType(fieldType);
         if (tableMapping) {
-          const { configBlock, resolverId, lookupExpr } = this.buildLookupResolver(block, tableMapping, {
-            contextId,
-            infoId,
-            visitorsId
-          });
+          const { configBlock, resolverId, lookupExpr } = this.buildLookupResolver(block, tableMapping, resolverNodes);
 
           // add a placeholder for building query based on arguments
           let configExpr = ts.createCall(ts.createPropertyAccess(resolverId, 'getBaseQuery'), undefined, []);
@@ -633,7 +642,7 @@ export class SqlResolverWriter {
 
   private performInsert(
     block: TsBlock,
-    context: ts.Expression,
+    resolverNodes: ResolverNodes,
     inputType: GraphQLInputObjectType,
     targetTypeInfo: TableTypeInfo
   ): { idId: ts.Identifier; identityTableMapping: TypeTable } {
@@ -654,6 +663,7 @@ export class SqlResolverWriter {
 
     const trxId = block.module.createIdentifier('trx');
     const trxBlock = block.newBlock();
+    const trxNodes = { ...resolverNodes, trxId };
 
     const insertProps: ts.ObjectLiteralElementLike[] = [];
     if (xidId) {
@@ -663,10 +673,7 @@ export class SqlResolverWriter {
     if (typeDiscriminatorField) {
       const fieldMapping = identityTableMapping.fieldMappings.get(typeDiscriminatorField);
       if (fieldMapping && isColumns(fieldMapping)) {
-        const enumsId = block.module.addNamespaceImport(
-          path.relative(this.config.resolversDir, this.config.enumMappingsDir),
-          'enums'
-        );
+        const enumsId = this.getEnumsImport(block.module);
         const enumName = getNamedType(typeDiscriminatorField.type).name;
         const enumValue = ts.createPropertyAccess(
           ts.createPropertyAccess(this.schemaNamespaceId, enumName),
@@ -681,12 +688,12 @@ export class SqlResolverWriter {
         insertProps.push(ts.createPropertyAssignment(fieldMapping.columns[0].name, sqlValue));
       }
     }
-    insertProps.push(...this.getInsertProps(block, inputType, identityTableMapping));
+    insertProps.push(...this.getInsertProps(trxBlock, trxNodes, inputType, identityTableMapping));
     const queryExpr = this.getInsertExpression(trxId, identityTableMapping.table.name, insertProps);
     const idId = trxBlock.declareConst(
       this.config.internalIdName,
       undefined,
-      ts.createElementAccess(this.getExecuteExpression(context, queryExpr), 0)
+      ts.createElementAccess(this.getExecuteExpression(resolverNodes.contextId, queryExpr), 0)
     );
 
     const targetTableMapping = this.sqlMappings.getIdentityTableForType(targetTypeInfo.type);
@@ -695,9 +702,11 @@ export class SqlResolverWriter {
       const keyParts = targetTableMapping.table.primaryKey.parts;
       assert(keyParts.length === 1);
       insertProps.push(ts.createPropertyAssignment(keyParts[0].column.name, idId));
-      insertProps.push(...this.getInsertProps(block, inputType, targetTableMapping));
+      insertProps.push(...this.getInsertProps(trxBlock, trxNodes, inputType, targetTableMapping));
       const queryExpr = this.getInsertExpression(trxId, targetTableMapping.table.name, insertProps);
-      trxBlock.addStatement(ts.createExpressionStatement(this.getExecuteExpression(context, queryExpr)));
+      trxBlock.addStatement(
+        ts.createExpressionStatement(this.getExecuteExpression(resolverNodes.contextId, queryExpr))
+      );
     }
 
     // TODO: insert nested objects into joined tables
@@ -705,16 +714,20 @@ export class SqlResolverWriter {
     trxBlock.addStatement(ts.createReturn(idId));
 
     const trxExpr = ts.createAwait(
-      ts.createCall(ts.createPropertyAccess(ts.createPropertyAccess(context, 'knex'), 'transaction'), undefined, [
-        ts.createArrowFunction(
-          [ts.createModifier(ts.SyntaxKind.AsyncKeyword)],
-          undefined,
-          [ts.createParameter(undefined, undefined, undefined, trxId)],
-          undefined,
-          undefined,
-          trxBlock.toBlock()
-        )
-      ])
+      ts.createCall(
+        ts.createPropertyAccess(ts.createPropertyAccess(resolverNodes.contextId, 'knex'), 'transaction'),
+        undefined,
+        [
+          ts.createArrowFunction(
+            [ts.createModifier(ts.SyntaxKind.AsyncKeyword)],
+            undefined,
+            [ts.createParameter(undefined, undefined, undefined, trxId)],
+            undefined,
+            undefined,
+            trxBlock.toBlock()
+          )
+        ]
+      )
     );
 
     return { idId: block.declareConst(this.config.internalIdName, undefined, trxExpr), identityTableMapping };
@@ -738,6 +751,7 @@ export class SqlResolverWriter {
 
   private getInsertProps(
     block: TsBlock,
+    trxNodes: ResolverTransactionNodes,
     inputType: GraphQLInputObjectType,
     tableMapping: TypeTable
   ): ts.ObjectLiteralElementLike[] {
@@ -748,12 +762,12 @@ export class SqlResolverWriter {
         const fieldMapping = tableMapping.fieldMappings.get(targetField);
         if (fieldMapping && isColumns(fieldMapping)) {
           if (fieldMapping.columns.length === 1) {
-            const id = block.findIdentifierFor(field);
-            if (id) {
+            const inputId = block.findIdentifierFor(field);
+            if (inputId) {
               const { name } = fieldMapping.columns[0];
               const fieldType = getNullableType(field.type);
               if (isEnumType(fieldType)) {
-                let expr: ts.Expression = id;
+                let expr: ts.Expression = inputId;
                 let nullable = false;
                 if (!isNonNullType(field.type)) {
                   const defaultDir = findFirstDirective(targetField, this.config.defaultDirective);
@@ -764,15 +778,12 @@ export class SqlResolverWriter {
                       ts.createPropertyAccess(this.schemaNamespaceId, field.type.name),
                       enumValue
                     );
-                    expr = ts.createNullishCoalesce(id, enumValueExpr);
+                    expr = ts.createNullishCoalesce(inputId, enumValueExpr);
                   } else {
                     nullable = true;
                   }
                 }
-                const enumsId = block.module.addNamespaceImport(
-                  path.relative(this.config.resolversDir, this.config.enumMappingsDir),
-                  'enums'
-                );
+                const enumsId = this.getEnumsImport(block.module);
                 const enumName = `${pascalCase(fieldType.name)}ToSql`;
                 expr = ts.createCall(
                   ts.createPropertyAccess(ts.createPropertyAccess(enumsId, enumName), 'get'),
@@ -780,11 +791,25 @@ export class SqlResolverWriter {
                   [expr]
                 );
                 if (nullable) {
-                  expr = ts.createLogicalAnd(id, expr);
+                  expr = ts.createLogicalAnd(inputId, expr);
                 }
                 result.push(ts.createPropertyAssignment(name, expr));
               } else {
-                result.push(block.createIdPropertyAssignment(name, id));
+                const xidRefDir = findFirstDirective(field, this.config.externalIdRefDirective);
+                if (xidRefDir) {
+                  result.push(
+                    ts.createPropertyAssignment(name, this.resolveExtIdRef(inputId, field, xidRefDir, block, trxNodes))
+                  );
+                  continue;
+                }
+                const sidRefDir = findFirstDirective(field, this.config.stringIdRefDirective);
+                if (sidRefDir) {
+                  result.push(
+                    ts.createPropertyAssignment(name, this.resolveExtIdRef(inputId, field, sidRefDir, block, trxNodes))
+                  );
+                  continue;
+                }
+                result.push(block.createIdPropertyAssignment(name, inputId));
               }
             }
           } else {
@@ -796,22 +821,44 @@ export class SqlResolverWriter {
     return result;
   }
 
+  private resolveExtIdRef(
+    inputId: ts.Identifier,
+    field: GraphQLInputField,
+    dir: DirectiveNode,
+    block: TsBlock,
+    trxNodes: ResolverTransactionNodes
+  ): ts.Expression {
+    const method = dir.name.value === this.config.stringIdRefDirective ? 'getIdForSid' : 'getIdForXid';
+    const type = (getRequiredDirectiveArgument(dir, 'type', 'StringValue').value as StringValueNode).value;
+    // await context.getIdForXid('someId', someXid, dbmeta.Type, { trx });
+    let expr: ts.Expression = ts.createAwait(
+      ts.createCall(ts.createPropertyAccess(trxNodes.contextId, method), undefined, [
+        ts.createStringLiteral(field.name),
+        inputId,
+        ts.createPropertyAccess(this.getMetaImport(block.module), type),
+        ts.createObjectLiteral([ts.createShorthandPropertyAssignment(trxNodes.trxId)])
+      ])
+    );
+    if (!isNonNullType(field.type)) {
+      // someXid && await ...
+      expr = ts.createLogicalAnd(inputId, expr);
+    }
+    // const someId = someXid && await ...
+    return block.declareConst(field.name, undefined, expr);
+  }
+
+  private getMetaImport(module: TsModule): ts.Identifier {
+    return module.addImport(path.relative(this.config.resolversDir, this.config.databaseMetadataDir), 'dbmeta');
+  }
+
+  private getEnumsImport(module: TsModule): ts.Identifier {
+    return module.addNamespaceImport(path.relative(this.config.resolversDir, this.config.enumMappingsDir), 'enums');
+  }
+
   private buildConnectionResolver(
     block: TsBlock,
     tableMapping: TypeTable,
-    {
-      argsId,
-      contextId,
-      infoId,
-      visitorsId,
-      returnType
-    }: {
-      argsId: ts.Identifier;
-      contextId: ts.Identifier;
-      infoId: ts.Identifier;
-      visitorsId: ts.Identifier;
-      returnType: ts.TypeNode;
-    }
+    { argsId, contextId, infoId, visitorsId, returnType }: ResolverNodes
   ): void {
     const { table, type } = tableMapping;
     const configBlock = block.newBlock();
@@ -876,7 +923,7 @@ export class SqlResolverWriter {
   private buildLookupResolver(
     block: TsBlock,
     tableMapping: TypeTable,
-    { contextId, infoId, visitorsId }: { contextId: ts.Identifier; infoId: ts.Identifier; visitorsId: ts.Identifier }
+    { contextId, infoId, visitorsId }: ResolverNodes
   ): { configBlock: TsBlock; resolverId: ts.Identifier; lookupExpr: ts.Expression } {
     const { table, type } = tableMapping;
     const configBlock = block.newBlock();
