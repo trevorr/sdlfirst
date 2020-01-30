@@ -22,7 +22,7 @@ import { mkdir } from './util/fs-util';
 import { defaultConfig as defaultFormatterConfig, TsFormatter, TsFormatterConfig } from './util/TsFormatter';
 import { TsModule } from './util/TsModule';
 
-const EdgesVisitorsType = 'EdgesVisitors';
+const EdgeVisitorsType = 'EdgeVisitors';
 const FieldVisitorsType = 'FieldVisitors';
 const PartialType = 'Partial';
 const ShallowFieldVisitorsType = 'ShallowFieldVisitors';
@@ -141,7 +141,7 @@ export class FieldVisitorWriter {
         ts.createTypeReferenceNode(ts.createQualifiedName(gqlsqlId, SqlEdgesResolverType), undefined),
         sqlQueryResolverType
       ]);
-      properties.push(ts.createSpreadAssignment(ts.createPropertyAccess(gqlsqlId, EdgesVisitorsType)));
+      properties.push(ts.createSpreadAssignment(ts.createPropertyAccess(gqlsqlId, EdgeVisitorsType)));
     } else {
       kind = 'object';
       // gqlsql.FieldVisitors<gqlsql.SqlQueryResolver>
@@ -205,8 +205,6 @@ export class FieldVisitorWriter {
           throw new Error(`Join mapping expected for connection field "${type.name}.${field.name}"`);
         }
         const infoId = ts.createIdentifier(this.config.infoArgName);
-        const visitorsId = ts.createIdentifier(this.config.visitorsArgName);
-        params.push(this.createSimpleParameter(visitorsId));
         const joinSpec = this.getJoinSpec(tableMapping, fieldMapping);
         const callParams: ts.Expression[] = [
           ts.createPropertyAccess(infoId, 'fieldName'),
@@ -254,7 +252,6 @@ export class FieldVisitorWriter {
               undefined,
               [
                 infoId,
-                visitorsId,
                 ts.createArrowFunction(
                   undefined,
                   undefined,

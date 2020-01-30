@@ -114,7 +114,6 @@ interface ResolverNodes {
   argsId: ts.Identifier;
   contextId: ts.Identifier;
   infoId: ts.Identifier;
-  visitorsId: ts.Identifier;
   returnType: ts.TypeNode;
 }
 
@@ -239,11 +238,6 @@ export class SqlResolverWriter {
       module.addNamedImport(contextTypeModule, contextType);
     }
 
-    const visitorsId = module.addImport(
-      path.relative(this.config.resolversDir, this.config.fieldVisitorsDir),
-      'visitors'
-    );
-
     const properties: ts.MethodDeclaration[] = [];
     for (const field of fields) {
       let parentId, parentType;
@@ -275,7 +269,6 @@ export class SqlResolverWriter {
         argsId,
         contextId,
         infoId,
-        visitorsId,
         returnType
       };
 
@@ -851,7 +844,7 @@ export class SqlResolverWriter {
   private buildConnectionResolver(
     block: TsBlock,
     tableMapping: TypeTable,
-    { argsId, contextId, infoId, visitorsId, returnType }: ResolverNodes
+    { argsId, contextId, infoId, returnType }: ResolverNodes
   ): void {
     const { table, type } = tableMapping;
     const configBlock = block.newBlock();
@@ -896,11 +889,7 @@ export class SqlResolverWriter {
                   'walk'
                 ),
                 undefined,
-                [
-                  infoId,
-                  visitorsId,
-                  this.createArrowFunction([this.createSimpleParameter(resolverId)], configBlock.toBlock())
-                ]
+                [infoId, this.createArrowFunction([this.createSimpleParameter(resolverId)], configBlock.toBlock())]
               ),
               'execute'
             ),
@@ -916,7 +905,7 @@ export class SqlResolverWriter {
   private buildLookupResolver(
     block: TsBlock,
     tableMapping: TypeTable,
-    { contextId, infoId, visitorsId }: ResolverNodes
+    { contextId, infoId }: ResolverNodes
   ): { configBlock: TsBlock; resolverId: ts.Identifier; lookupExpr: ts.Expression } {
     const { table, type } = tableMapping;
     const configBlock = block.newBlock();
@@ -946,11 +935,7 @@ export class SqlResolverWriter {
             'walk'
           ),
           undefined,
-          [
-            infoId,
-            visitorsId,
-            this.createArrowFunction([this.createSimpleParameter(resolverId)], configBlock.toBlock())
-          ]
+          [infoId, this.createArrowFunction([this.createSimpleParameter(resolverId)], configBlock.toBlock())]
         ),
         'executeLookup'
       ),
