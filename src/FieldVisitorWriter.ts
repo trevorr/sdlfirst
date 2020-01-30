@@ -2,6 +2,7 @@ import assert from 'assert';
 import {
   getNamedType,
   getNullableType,
+  GraphQLCompositeType,
   isCompositeType,
   isEnumType,
   isInterfaceType,
@@ -171,10 +172,14 @@ export class FieldVisitorWriter {
           )
         );
       } else if (isScalarType(fieldType)) {
-        if (!fieldMapping || !isColumns(fieldMapping)) {
-          throw new Error(`Column expected for scalar field "${type.name}.${field.name}"`);
+        if (hasDirective(field, this.config.randomIdDirective)) {
+          body.push(ts.createReturn(this.addQidField(module, gqlsqlId, type)));
+        } else {
+          if (!fieldMapping || !isColumns(fieldMapping)) {
+            throw new Error(`Column expected for scalar field "${type.name}.${field.name}"`);
+          }
+          body.push(ts.createReturn(this.addVisitorColumnField(fieldMapping.columns[0].name, table.name)));
         }
-        body.push(ts.createReturn(this.addVisitorColumnField(fieldMapping.columns[0].name, table.name)));
       } else if (isEnumType(fieldType)) {
         if (!fieldMapping || !isColumns(fieldMapping)) {
           throw new Error(`Column expected for enum field "${type.name}.${field.name}"`);
@@ -646,6 +651,15 @@ export class FieldVisitorWriter {
         ts.createArrayLiteral(joinSpec)
       ]
     );
+  }
+
+  private addQidField(module: TsModule, gqlsqlId: ts.Identifier, type: GraphQLCompositeType): ts.Expression {
+    const metaId = module.addImport(path.relative(this.config.resolversDir, this.config.databaseMetadataDir), 'dbmeta');
+    return ts.createCall(ts.createPropertyAccess(gqlsqlId, 'addQidField'), undefined, [
+      ts.createIdentifier(this.config.contextArgName),
+      ts.createPropertyAccess(ts.createIdentifier(this.config.infoArgName), 'fieldName'),
+      ts.createPropertyAccess(metaId, type.name)
+    ]);
   }
 
   private createSimpleParameter(name: string | ts.Identifier, type?: ts.TypeNode): ts.ParameterDeclaration {
