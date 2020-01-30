@@ -2,20 +2,20 @@ import { GraphQLCompositeType, isCompositeType, isInterfaceType, isUnionType } f
 import path from 'path';
 import ts from 'typescript';
 import { Analyzer, TableType, TypeInfo } from './Analyzer';
-import { defaultConfig as defaultPathConfig, PathConfig } from './config/PathConfig';
-import { SqlSchemaMappings } from './SqlSchemaBuilder';
+import { defaultConfig as defaultSqlConfig, SqlConfig } from './config/SqlConfig';
+import { isColumns, SqlSchemaMappings } from './SqlSchemaBuilder';
 import { compare } from './util/compare';
 import { mkdir } from './util/fs-util';
 import { defaultConfig as defaultFormatterConfig, TsFormatter, TsFormatterConfig } from './util/TsFormatter';
 import { TsModule } from './util/TsModule';
 
-export interface SqlMetadataConfig extends PathConfig, TsFormatterConfig {
+export interface SqlMetadataConfig extends SqlConfig, TsFormatterConfig {
   gqlsqlNamespace: string;
   gqlsqlModule: string;
 }
 
 export const defaultConfig: SqlMetadataConfig = {
-  ...defaultPathConfig,
+  ...defaultSqlConfig,
   ...defaultFormatterConfig,
   gqlsqlNamespace: 'gqlsql',
   gqlsqlModule: 'gqlsql'
@@ -75,8 +75,8 @@ export class SqlMetadataWriter {
       }
       propMap['tableIds'] = ts.createObjectLiteral(idProps, true);
     } else {
-      const { identityTypeInfo, tableId } = typeInfo;
-      const idType = identityTypeInfo ? identityTypeInfo.type : typeInfo.hasTable ? (type as TableType) : null;
+      const { identityTypeInfo = typeInfo, tableId } = typeInfo;
+      const idType = identityTypeInfo.hasTable ? (identityTypeInfo.type as TableType) : null;
       if (idType) {
         const mapping = this.sqlMappings.getIdentityTableForType(idType);
         if (mapping) {
@@ -86,7 +86,25 @@ export class SqlMetadataWriter {
             propMap['tableId'] = ts.createStringLiteral(tableId);
           }
 
-          propMap['tableName'] = ts.createStringLiteral(mapping.table.name);
+          const { table } = mapping;
+          propMap['tableName'] = ts.createStringLiteral(table.name);
+
+          if (table.primaryKey.parts.length > 0) {
+            propMap['idColumns'] = ts.createArrayLiteral(
+              table.primaryKey.parts.map(part => ts.createStringLiteral(part.column.name))
+            );
+          }
+
+          if (identityTypeInfo.externalIdField && identityTypeInfo.externalIdDirective) {
+            const fieldMapping = mapping.fieldMappings.get(identityTypeInfo.externalIdField);
+            if (fieldMapping && isColumns(fieldMapping) && fieldMapping.columns.length === 1) {
+              const propName =
+                identityTypeInfo.externalIdDirective.name.value === this.config.randomIdDirective
+                  ? 'randomIdColumn'
+                  : 'stringIdColumn';
+              propMap[propName] = ts.createStringLiteral(fieldMapping.columns[0].name);
+            }
+          }
         } else {
           return null;
         }

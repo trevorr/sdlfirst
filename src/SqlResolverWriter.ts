@@ -795,21 +795,16 @@ export class SqlResolverWriter {
                 }
                 result.push(ts.createPropertyAssignment(name, expr));
               } else {
-                const ridRefDir = findFirstDirective(field, this.config.randomIdRefDirective);
-                if (ridRefDir) {
+                const refDir =
+                  findFirstDirective(field, this.config.randomIdRefDirective) ||
+                  findFirstDirective(field, this.config.stringIdRefDirective);
+                if (refDir) {
                   result.push(
-                    ts.createPropertyAssignment(name, this.resolveExtIdRef(inputId, field, ridRefDir, block, trxNodes))
+                    ts.createPropertyAssignment(name, this.resolveXidRef(inputId, field, refDir, block, trxNodes))
                   );
-                  continue;
+                } else {
+                  result.push(block.createIdPropertyAssignment(name, inputId));
                 }
-                const sidRefDir = findFirstDirective(field, this.config.stringIdRefDirective);
-                if (sidRefDir) {
-                  result.push(
-                    ts.createPropertyAssignment(name, this.resolveExtIdRef(inputId, field, sidRefDir, block, trxNodes))
-                  );
-                  continue;
-                }
-                result.push(block.createIdPropertyAssignment(name, inputId));
               }
             }
           } else {
@@ -821,22 +816,20 @@ export class SqlResolverWriter {
     return result;
   }
 
-  private resolveExtIdRef(
+  private resolveXidRef(
     inputId: ts.Identifier,
     field: GraphQLInputField,
     dir: DirectiveNode,
     block: TsBlock,
     trxNodes: ResolverTransactionNodes
   ): ts.Expression {
-    const method = dir.name.value === this.config.stringIdRefDirective ? 'getIdForSid' : 'getIdForXid';
     const type = (getRequiredDirectiveArgument(dir, 'type', 'StringValue').value as StringValueNode).value;
-    // await context.getIdForXid('someId', someXid, dbmeta.Type, { trx });
+    // await context.getIdForXid(someXid, dbmeta.Type, trx);
     let expr: ts.Expression = ts.createAwait(
-      ts.createCall(ts.createPropertyAccess(trxNodes.contextId, method), undefined, [
-        ts.createStringLiteral(field.name),
+      ts.createCall(ts.createPropertyAccess(trxNodes.contextId, 'getIdForXid'), undefined, [
         inputId,
         ts.createPropertyAccess(this.getMetaImport(block.module), type),
-        ts.createObjectLiteral([ts.createShorthandPropertyAssignment(trxNodes.trxId)])
+        trxNodes.trxId
       ])
     );
     if (!isNonNullType(field.type)) {
