@@ -14,16 +14,16 @@ function schemaTables(sdl: string): string[] {
 describe('SqlSchemaBuilder', () => {
   it('basically works', async () => {
     const tables = schemaTables(`
-      directive @xid on FIELD_DEFINITION
-      type A { id: ID! @xid, b: B }
+      directive @rid on FIELD_DEFINITION
+      type A { id: ID! @rid, b: B }
       type B { x: String }
     `);
     expect(tables).to.eql([
       `CREATE TABLE \`a\` (
   \`id\` int(10) unsigned NOT NULL AUTO_INCREMENT,
-  \`xid\` varchar(21) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  \`rid\` varchar(21) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   PRIMARY KEY (\`id\`),
-  UNIQUE KEY \`xid\` (\`xid\`)
+  UNIQUE KEY \`rid\` (\`rid\`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 `,
       `CREATE TABLE \`b\` (
@@ -37,9 +37,9 @@ describe('SqlSchemaBuilder', () => {
 
   it('handles M:N connections with implicit edge table', async () => {
     const tables = schemaTables(`
-      directive @xid on FIELD_DEFINITION
-      type A { id: ID! @xid, bs: BConnection! }
-      type B { id: ID! @xid }
+      directive @rid on FIELD_DEFINITION
+      type A { id: ID! @rid, bs: BConnection! }
+      type B { id: ID! @rid }
       type BEdge { cursor: String!, node: B! }
       type BConnection {
         edges: [BEdge!]!
@@ -50,9 +50,9 @@ describe('SqlSchemaBuilder', () => {
     expect(tables).to.eql([
       `CREATE TABLE \`a\` (
   \`id\` int(10) unsigned NOT NULL AUTO_INCREMENT,
-  \`xid\` varchar(21) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  \`rid\` varchar(21) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   PRIMARY KEY (\`id\`),
-  UNIQUE KEY \`xid\` (\`xid\`)
+  UNIQUE KEY \`rid\` (\`rid\`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 `,
       `CREATE TABLE \`b_edge\` (
@@ -63,9 +63,9 @@ describe('SqlSchemaBuilder', () => {
 `,
       `CREATE TABLE \`b\` (
   \`id\` int(10) unsigned NOT NULL AUTO_INCREMENT,
-  \`xid\` varchar(21) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  \`rid\` varchar(21) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   PRIMARY KEY (\`id\`),
-  UNIQUE KEY \`xid\` (\`xid\`)
+  UNIQUE KEY \`rid\` (\`rid\`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 `
     ]);
@@ -74,10 +74,10 @@ describe('SqlSchemaBuilder', () => {
   it('handles M:N connections with explicit join table via backref field', async () => {
     const tables = schemaTables(`
       directive @id on FIELD_DEFINITION
-      directive @xid on FIELD_DEFINITION
+      directive @rid on FIELD_DEFINITION
       directive @oneToMany(backrefField: String) on FIELD_DEFINITION
       type Person {
-        id: ID! @xid
+        id: ID! @rid
         connectedTo: SocialConnection! @oneToMany(backrefField: "from")
         connectedFrom: SocialConnection! @oneToMany(backrefField: "to")
       }
@@ -92,9 +92,9 @@ describe('SqlSchemaBuilder', () => {
     expect(tables).to.eql([
       `CREATE TABLE \`person\` (
   \`id\` int(10) unsigned NOT NULL AUTO_INCREMENT,
-  \`xid\` varchar(21) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  \`rid\` varchar(21) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   PRIMARY KEY (\`id\`),
-  UNIQUE KEY \`xid\` (\`xid\`)
+  UNIQUE KEY \`rid\` (\`rid\`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 `,
       `CREATE TABLE \`social_graph\` (
