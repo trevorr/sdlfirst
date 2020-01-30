@@ -42,7 +42,7 @@ export const defaultConfig: SqlConfig = {
   internalIdSqlType: 'int(10) unsigned',
   internalIdAutoIncrement: true,
 
-  randomIdName: 'xid',
+  randomIdName: 'rid',
   randomIdSqlType: 'varchar(21)',
   randomIdCharset: 'utf8mb4',
   randomIdCollate: 'utf8mb4_bin',

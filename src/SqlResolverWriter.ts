@@ -382,7 +382,7 @@ export class SqlResolverWriter {
           let configExpr = ts.createCall(ts.createPropertyAccess(resolverId, 'getBaseQuery'), undefined, []);
           if ('id' in field.args) {
             configExpr = ts.createCall(ts.createPropertyAccess(configExpr, 'where'), undefined, [
-              ts.createStringLiteral('xid'),
+              ts.createStringLiteral(this.config.randomIdName),
               ts.createPropertyAccess(argsId, 'id')
             ]);
           }
@@ -568,11 +568,11 @@ export class SqlResolverWriter {
               maxArgName: 'maxLength',
               defaultMin: '1'
             });
-            const xidDir = findFirstDirective(field, this.config.randomIdRefDirective);
-            if (xidDir) {
-              // xids should be /([A-Z]{1,4}_)?[0-9A-Za-z]{21}/
+            const ridDir = findFirstDirective(field, this.config.randomIdRefDirective);
+            if (ridDir) {
+              // rids should be /([A-Z]{1,4}_)?[0-9A-Za-z]{21}/
               // but strict validation isn't necessary due to database lookup
-              expr = getRangeValidator(expr, xidDir, 'string', {
+              expr = getRangeValidator(expr, ridDir, 'string', {
                 betweenMethod: 'length',
                 defaultMin: '21',
                 defaultMax: '26'
@@ -652,9 +652,9 @@ export class SqlResolverWriter {
       throw new Error(`No table mapping for type "${targetTypeInfo.type.name}"`);
     }
 
-    let xidId;
+    let ridId;
     if (targetTypeInfo.externalIdDirective?.name.value === this.config.randomIdDirective) {
-      xidId = block.declareConst(
+      ridId = block.declareConst(
         this.config.randomIdName,
         undefined,
         ts.createCall(block.module.addImport(this.config.id62Module, this.config.id62Binding), undefined, undefined)
@@ -666,8 +666,8 @@ export class SqlResolverWriter {
     const trxNodes = { ...resolverNodes, trxId };
 
     const insertProps: ts.ObjectLiteralElementLike[] = [];
-    if (xidId) {
-      insertProps.push(block.createIdPropertyAssignment(this.config.randomIdName, xidId));
+    if (ridId) {
+      insertProps.push(block.createIdPropertyAssignment(this.config.randomIdName, ridId));
     }
     const { typeDiscriminatorField } = identityTypeInfo;
     if (typeDiscriminatorField) {
@@ -795,10 +795,10 @@ export class SqlResolverWriter {
                 }
                 result.push(ts.createPropertyAssignment(name, expr));
               } else {
-                const xidRefDir = findFirstDirective(field, this.config.randomIdRefDirective);
-                if (xidRefDir) {
+                const ridRefDir = findFirstDirective(field, this.config.randomIdRefDirective);
+                if (ridRefDir) {
                   result.push(
-                    ts.createPropertyAssignment(name, this.resolveExtIdRef(inputId, field, xidRefDir, block, trxNodes))
+                    ts.createPropertyAssignment(name, this.resolveExtIdRef(inputId, field, ridRefDir, block, trxNodes))
                   );
                   continue;
                 }

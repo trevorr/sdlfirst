@@ -58,10 +58,10 @@ export interface TypeInfo<T = AnalyzedType> {
   // fields with @id directive, if any
   internalIdFields?: FieldType[];
 
-  // field with @sid or @xid directive, if any
+  // field with @sid or @rid directive, if any
   externalIdField?: FieldType;
 
-  // @sid or @xid directive of external ID field, if any
+  // @sid or @rid directive of external ID field, if any
   externalIdDirective?: DirectiveNode;
 
   // field used to determine concrete type of interface
@@ -251,10 +251,10 @@ export class Analyzer {
         }
         foundId = true;
       }
-      const xidDir = findFirstDirective(field, config.randomIdDirective);
+      const ridDir = findFirstDirective(field, config.randomIdDirective);
       const sidDir = findFirstDirective(field, config.stringIdDirective);
-      if (xidDir || sidDir) {
-        if (xidDir && sidDir) {
+      if (ridDir || sidDir) {
+        if (ridDir && sidDir) {
           throw new Error(
             `Cannot specify both @${config.randomIdDirective} and ` +
               `@${config.stringIdDirective} on ${type.name}.${field.name}`
@@ -267,7 +267,7 @@ export class Analyzer {
           throw new Error(`Duplicate external ID field: ${type.name}.${field.name}`);
         }
         typeInfo.externalIdField = field;
-        typeInfo.externalIdDirective = xidDir || sidDir;
+        typeInfo.externalIdDirective = ridDir || sidDir;
         foundId = true;
       }
       if (foundId) {

@@ -271,9 +271,9 @@ export class SqlSchemaBuilder {
       // determine SQL type from scalar type
       switch (fieldType.name) {
         case 'ID':
-          const xidDir = findFirstDirective(field, this.config.randomIdDirective);
+          const ridDir = findFirstDirective(field, this.config.randomIdDirective);
           const sidDir = findFirstDirective(field, this.config.stringIdDirective);
-          if (xidDir != null) {
+          if (ridDir != null) {
             name = this.config.randomIdName;
             sqlType = this.config.randomIdSqlType;
             charset = this.config.randomIdCharset;
@@ -292,7 +292,7 @@ export class SqlSchemaBuilder {
             collate = this.config.idCollate;
             uniqueKey = true;
           } else {
-            throw new Error(`@sqlType, @sid, or @xid directive required for ID type${formatLocationOf(field.astNode)}`);
+            throw new Error(`@sqlType, @sid, or @rid directive required for ID type${formatLocationOf(field.astNode)}`);
           }
           break;
         case 'String':
@@ -778,9 +778,9 @@ function getColumnNameInfo(
   }
 
   if (!name) {
-    const xidDir = findFirstDirective(field, config.randomIdDirective);
+    const ridDir = findFirstDirective(field, config.randomIdDirective);
     const sidDir = findFirstDirective(field, config.stringIdDirective);
-    if (xidDir != null) {
+    if (ridDir != null) {
       name = config.randomIdName;
     } else if (sidDir != null) {
       name = config.stringIdName;

@@ -2,13 +2,13 @@
 directive @id on FIELD_DEFINITION
 
 """Indicates a field containing a type's randomly-generated external identity string. Implicitly read-only."""
-directive @xid on FIELD_DEFINITION
+directive @rid on FIELD_DEFINITION
 
 """Indicates that an input field's type is a randomly-generated external identity string referring to an object of the given type."""
-directive @xidRef(
+directive @ridRef(
   """
   The type of object to which the ID field refers.
-  It must be an object or interface containing a @xid field or a union of objects that do.
+  It must be an object or interface containing a @rid field or a union of objects that do.
   """
   type: String!
 ) on INPUT_FIELD_DEFINITION
