@@ -5,8 +5,6 @@ export interface DirectiveConfig {
   defaultDirective: string;
   deleteDirective: string;
   derivedDirective: string;
-  externalIdDirective: string;
-  externalIdRefDirective: string;
   floatRangeDirective: string;
   generatedDefaultDirective: string;
   immutableDirective: string;
@@ -15,6 +13,8 @@ export interface DirectiveConfig {
   lengthDirective: string;
   newManyToManyDirective: string;
   oneToManyDirective: string;
+  randomIdDirective: string;
+  randomIdRefDirective: string;
   readonlyDirective: string;
   regexDirective: string;
   sqlColumnDirective: string;
@@ -38,8 +38,6 @@ export const defaultConfig: DirectiveConfig = {
   defaultDirective: 'default',
   deleteDirective: 'delete',
   derivedDirective: 'derived',
-  externalIdDirective: 'xid',
-  externalIdRefDirective: 'xidRef',
   floatRangeDirective: 'floatRange',
   generatedDefaultDirective: 'generatedDefault',
   immutableDirective: 'immutable',
@@ -48,6 +46,8 @@ export const defaultConfig: DirectiveConfig = {
   lengthDirective: 'length',
   newManyToManyDirective: 'newManyToMany',
   oneToManyDirective: 'oneToMany',
+  randomIdDirective: 'xid',
+  randomIdRefDirective: 'xidRef',
   readonlyDirective: 'readonly',
   regexDirective: 'regex',
   sqlColumnDirective: 'sqlColumn',

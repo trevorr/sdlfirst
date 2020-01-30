@@ -251,12 +251,12 @@ export class Analyzer {
         }
         foundId = true;
       }
-      const xidDir = findFirstDirective(field, config.externalIdDirective);
+      const xidDir = findFirstDirective(field, config.randomIdDirective);
       const sidDir = findFirstDirective(field, config.stringIdDirective);
       if (xidDir || sidDir) {
         if (xidDir && sidDir) {
           throw new Error(
-            `Cannot specify both @${config.externalIdDirective} and ` +
+            `Cannot specify both @${config.randomIdDirective} and ` +
               `@${config.stringIdDirective} on ${type.name}.${field.name}`
           );
         }

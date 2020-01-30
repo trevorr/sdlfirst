@@ -233,7 +233,7 @@ export class MutationBuilder {
     }
 
     let inputType;
-    let inputDirective;
+    let inputDir;
     const createDir = findFirstDirective(field, this.config.createNestedDirective);
     if (createDir) {
       const inputArg = getDirectiveArgument(createDir, 'input');
@@ -277,7 +277,7 @@ export class MutationBuilder {
         const typeInfo = this.analyzer.findTypeInfo(type);
         if (typeInfo && typeInfo.externalIdField) {
           inputType = assertScalarType(getNullableType(typeInfo.externalIdField.type));
-          inputDirective = this.getExternalIdRefDirective(typeInfo.externalIdDirective!, type.name);
+          inputDir = this.getExternalIdRefDirective(typeInfo.externalIdDirective!, type.name);
           name += 'Id';
         } else if (isObjectType(type)) {
           inputType = this.getCreateType(type, true);
@@ -288,7 +288,7 @@ export class MutationBuilder {
           const objectTypes = isInterfaceType(type) ? this.analyzer.getImplementingTypes(type) : type.getTypes();
           try {
             inputType = this.getExternalIdType(objectTypes);
-            inputDirective = this.getExternalIdRefDirective(this.getExternalIdDirective(objectTypes)!, type.name);
+            inputDir = this.getExternalIdRefDirective(this.getExternalIdDirective(objectTypes)!, type.name);
             name += 'Id';
           } catch (e) {
             throw new Error(`Cannot convert type "${type.name}" to input type for field "${field.name}": ${e.message}`);
@@ -296,7 +296,7 @@ export class MutationBuilder {
         }
       } else {
         inputType = type;
-        inputDirective = findFirstDirective(field, this.config.stringIdDirective);
+        inputDir = findFirstDirective(field, this.config.stringIdDirective);
       }
     }
 
@@ -304,7 +304,7 @@ export class MutationBuilder {
     if (nonNull) {
       inputType = new GraphQLNonNull(inputType);
     }
-    const astNode = makeInputValueDefinitionNode(name, inputType, inputDirective && [inputDirective]);
+    const astNode = makeInputValueDefinitionNode(name, inputType, inputDir && [inputDir]);
     return [name, { type: inputType, astNode }];
   }
 
@@ -378,7 +378,7 @@ export class MutationBuilder {
     }
 
     let inputType;
-    let extIdDirective;
+    let externalIdDir;
     const updateDir = findFirstDirective(field, this.config.updateNestedDirective);
     if (updateDir) {
       const inputArg = getDirectiveArgument(updateDir, 'input');
@@ -398,7 +398,7 @@ export class MutationBuilder {
         const typeInfo = this.analyzer.findTypeInfo(type);
         if (typeInfo && typeInfo.externalIdField) {
           inputType = assertScalarType(getNullableType(typeInfo.externalIdField.type));
-          extIdDirective = typeInfo.externalIdDirective;
+          externalIdDir = typeInfo.externalIdDirective;
           name += 'Id';
         } else if (isObjectType(type)) {
           inputType = this.getUpdateType(type, true);
@@ -409,7 +409,7 @@ export class MutationBuilder {
           const objectTypes = isInterfaceType(type) ? this.analyzer.getImplementingTypes(type) : type.getTypes();
           try {
             inputType = this.getExternalIdType(objectTypes);
-            extIdDirective = this.getExternalIdDirective(objectTypes);
+            externalIdDir = this.getExternalIdDirective(objectTypes);
             name += 'Id';
           } catch (e) {
             throw new Error(`Cannot convert type "${type.name}" to input type for field "${field.name}": ${e.message}`);
@@ -421,8 +421,8 @@ export class MutationBuilder {
     }
 
     inputType = wrapType(inputType, wrapped.wrappers) as GraphQLInputType;
-    const refDirective = extIdDirective && this.getExternalIdRefDirective(extIdDirective, getNamedType(type).name);
-    const astNode = makeInputValueDefinitionNode(name, inputType, refDirective && [refDirective]);
+    const refDir = externalIdDir && this.getExternalIdRefDirective(externalIdDir, getNamedType(type).name);
+    const astNode = makeInputValueDefinitionNode(name, inputType, refDir && [refDir]);
     return [name, { type: inputType, astNode }];
   }
 
@@ -430,8 +430,8 @@ export class MutationBuilder {
     let name;
     const args: ArgumentNode[] = [];
     switch (originalDirective.name.value) {
-      case this.config.externalIdDirective:
-        name = this.config.externalIdRefDirective;
+      case this.config.randomIdDirective:
+        name = this.config.randomIdRefDirective;
         break;
       case this.config.stringIdDirective:
         name = this.config.stringIdRefDirective;
@@ -548,8 +548,8 @@ export class MutationBuilder {
     return new Set([
       this.config.createdAtDirective,
       this.config.derivedDirective,
-      this.config.externalIdDirective,
       this.config.internalIdDirective,
+      this.config.randomIdDirective,
       this.config.readonlyDirective,
       this.config.typeDiscriminatorDirective,
       this.config.updatedAtDirective

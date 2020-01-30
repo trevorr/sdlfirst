@@ -13,10 +13,10 @@ export interface SqlConfig extends DirectiveConfig, PathConfig {
   internalIdSqlType: string;
   internalIdAutoIncrement: true;
 
-  externalIdName: string;
-  externalIdSqlType: string;
-  externalIdCharset?: string;
-  externalIdCollate?: string;
+  randomIdName: string;
+  randomIdSqlType: string;
+  randomIdCharset?: string;
+  randomIdCollate?: string;
 
   stringIdName: string;
   stringIdCharset?: string;
@@ -42,10 +42,10 @@ export const defaultConfig: SqlConfig = {
   internalIdSqlType: 'int(10) unsigned',
   internalIdAutoIncrement: true,
 
-  externalIdName: 'xid',
-  externalIdSqlType: 'varchar(21)',
-  externalIdCharset: 'utf8mb4',
-  externalIdCollate: 'utf8mb4_bin',
+  randomIdName: 'xid',
+  randomIdSqlType: 'varchar(21)',
+  randomIdCharset: 'utf8mb4',
+  randomIdCollate: 'utf8mb4_bin',
 
   stringIdName: 'sid',
   stringIdCharset: 'utf8mb4',

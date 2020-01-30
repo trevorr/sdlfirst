@@ -449,8 +449,8 @@ export class SqlResolverWriter {
           let idSuffix;
           if (hasDirectives(field, [this.config.stringIdDirective, this.config.stringIdRefDirective])) {
             idSuffix = this.config.stringIdName;
-          } else if (hasDirective(field, this.config.externalIdRefDirective)) {
-            idSuffix = this.config.externalIdName;
+          } else if (hasDirective(field, this.config.randomIdRefDirective)) {
+            idSuffix = this.config.randomIdName;
           }
           if (idSuffix) {
             let binding;
@@ -537,7 +537,7 @@ export class SqlResolverWriter {
 
   private getExternalId(field: GraphQLInputField | FieldType): DirectiveNode | undefined {
     return (
-      findFirstDirective(field, this.config.externalIdDirective) ||
+      findFirstDirective(field, this.config.randomIdDirective) ||
       findFirstDirective(field, this.config.stringIdDirective)
     );
   }
@@ -568,7 +568,7 @@ export class SqlResolverWriter {
               maxArgName: 'maxLength',
               defaultMin: '1'
             });
-            const xidDir = findFirstDirective(field, this.config.externalIdRefDirective);
+            const xidDir = findFirstDirective(field, this.config.randomIdRefDirective);
             if (xidDir) {
               // xids should be /([A-Z]{1,4}_)?[0-9A-Za-z]{21}/
               // but strict validation isn't necessary due to database lookup
@@ -653,9 +653,9 @@ export class SqlResolverWriter {
     }
 
     let xidId;
-    if (targetTypeInfo.externalIdDirective?.name.value === this.config.externalIdDirective) {
+    if (targetTypeInfo.externalIdDirective?.name.value === this.config.randomIdDirective) {
       xidId = block.declareConst(
-        this.config.externalIdName,
+        this.config.randomIdName,
         undefined,
         ts.createCall(block.module.addImport(this.config.id62Module, this.config.id62Binding), undefined, undefined)
       );
@@ -667,7 +667,7 @@ export class SqlResolverWriter {
 
     const insertProps: ts.ObjectLiteralElementLike[] = [];
     if (xidId) {
-      insertProps.push(block.createIdPropertyAssignment(this.config.externalIdName, xidId));
+      insertProps.push(block.createIdPropertyAssignment(this.config.randomIdName, xidId));
     }
     const { typeDiscriminatorField } = identityTypeInfo;
     if (typeDiscriminatorField) {
@@ -795,7 +795,7 @@ export class SqlResolverWriter {
                 }
                 result.push(ts.createPropertyAssignment(name, expr));
               } else {
-                const xidRefDir = findFirstDirective(field, this.config.externalIdRefDirective);
+                const xidRefDir = findFirstDirective(field, this.config.randomIdRefDirective);
                 if (xidRefDir) {
                   result.push(
                     ts.createPropertyAssignment(name, this.resolveExtIdRef(inputId, field, xidRefDir, block, trxNodes))
