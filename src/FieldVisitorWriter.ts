@@ -24,8 +24,11 @@ import { TsModule } from './util/TsModule';
 
 const EdgesVisitorsType = 'EdgesVisitors';
 const FieldVisitorsType = 'FieldVisitors';
+const PartialType = 'Partial';
+const ShallowFieldVisitorsType = 'ShallowFieldVisitors';
+const SqlEdgesResolverType = 'SqlEdgesResolver';
 const SqlQueryResolverType = 'SqlQueryResolver';
-const TypeVisitorsType = 'TypeVisitors';
+const SqlTypeVisitorsType = 'SqlTypeVisitors';
 const VisitorsConst = 'Visitors';
 
 export interface FieldVisitorConfig extends SqlConfig, TsFormatterConfig {
@@ -51,9 +54,20 @@ interface VisitorInfo {
   path: string;
 }
 
+interface VisitorInfoByKind {
+  [kind: string]: VisitorInfo[];
+}
+
 export class FieldVisitorWriter {
   private readonly config: Readonly<FieldVisitorConfig>;
-  private readonly visitors: VisitorInfo[] = [];
+  private readonly visitors: VisitorInfoByKind = {
+    // ordered by frequency of use
+    object: [],
+    union: [],
+    edge: [],
+    connection: [],
+    pageInfo: []
+  };
   private readonly formatter: TsFormatter;
 
   constructor(
@@ -68,16 +82,19 @@ export class FieldVisitorWriter {
   public async writeVisitors(): Promise<string[]> {
     const { baseDir, fieldVisitorsDir } = this.config;
     await mkdir(path.join(baseDir, fieldVisitorsDir), { recursive: true });
+
     // TODO: generate visitors for union, connection-only, and SQL object types
     for (const tableMapping of this.sqlMappings.tables) {
       await this.writeVisitor(tableMapping);
     }
-    const files = this.visitors.map(r => r.path);
-    if (this.visitors.length > 0) {
-      const outputFile = this.getSourcePath('index');
-      await this.createIndexModule(this.visitors).write(outputFile, this.formatter);
-      files.push(outputFile);
-    }
+
+    const indexFile = this.getSourcePath('index');
+    await this.createIndexModule().write(indexFile, this.formatter);
+
+    const files = Object.values(this.visitors)
+      .flat()
+      .map(v => v.path);
+    files.push(indexFile);
     return files;
   }
 
@@ -111,8 +128,26 @@ export class FieldVisitorWriter {
 
     const properties: ts.ObjectLiteralElementLike[] = [];
 
+    const sqlQueryResolverType = ts.createTypeReferenceNode(
+      ts.createQualifiedName(gqlsqlId, SqlQueryResolverType),
+      undefined
+    );
+    let visitorsType;
+    let kind;
     if (isEdgeType) {
+      kind = 'edge';
+      // gqlsql.ShallowFieldVisitors<gqlsql.SqlEdgesResolver, gqlsql.SqlQueryResolver>
+      visitorsType = ts.createTypeReferenceNode(ts.createQualifiedName(gqlsqlId, ShallowFieldVisitorsType), [
+        ts.createTypeReferenceNode(ts.createQualifiedName(gqlsqlId, SqlEdgesResolverType), undefined),
+        sqlQueryResolverType
+      ]);
       properties.push(ts.createSpreadAssignment(ts.createPropertyAccess(gqlsqlId, EdgesVisitorsType)));
+    } else {
+      kind = 'object';
+      // gqlsql.FieldVisitors<gqlsql.SqlQueryResolver>
+      visitorsType = ts.createTypeReferenceNode(ts.createQualifiedName(gqlsqlId, FieldVisitorsType), [
+        sqlQueryResolverType
+      ]);
     }
 
     const { table, fieldMappings } = tableMapping;
@@ -302,15 +337,7 @@ export class FieldVisitorWriter {
     }
     if (!properties.length) return;
 
-    const sqlQueryResolverType = ts.createTypeReferenceNode(
-      ts.createQualifiedName(gqlsqlId, SqlQueryResolverType),
-      undefined
-    );
-    const visitorsId = module.declareConst(
-      VisitorsConst,
-      ts.createTypeReferenceNode(ts.createQualifiedName(gqlsqlId, FieldVisitorsType), [sqlQueryResolverType]),
-      ts.createObjectLiteral(properties, true)
-    );
+    const visitorsId = module.declareConst(VisitorsConst, visitorsType, ts.createObjectLiteral(properties, true));
 
     let defaultExpr: ts.Expression = visitorsId;
     if (identityVisitorsId) {
@@ -407,7 +434,7 @@ export class FieldVisitorWriter {
 
     const sourcePath = this.getSourcePath(type.name);
     await module.write(sourcePath, this.formatter);
-    this.visitors.push({ id: type.name, path: sourcePath });
+    this.addVisitor(kind, { id: type.name, path: sourcePath });
   }
 
   private getJoinSpec(fromTableMapping: TypeTable, fieldMapping: FieldJoin): ts.Expression {
@@ -628,20 +655,34 @@ export class FieldVisitorWriter {
     return ts.createParameter(undefined, undefined, undefined, name, undefined, type);
   }
 
-  private createIndexModule(resolvers: VisitorInfo[]): TsModule {
+  private addVisitor(kind: string, info: VisitorInfo): void {
+    let arr = this.visitors[kind];
+    if (!arr) {
+      this.visitors[kind] = arr = [];
+    }
+    arr.push(info);
+  }
+
+  private createIndexModule(): TsModule {
     const module = new TsModule();
-    const properties = [];
-    resolvers.sort((a, b) => compare(a.id, b.id));
-    for (const resolver of resolvers) {
-      const { id } = resolver;
-      const idIdentifier = module.addImport(`./${id}`, id);
-      properties.push(ts.createShorthandPropertyAssignment(idIdentifier));
+    const kindProperties = [];
+    for (const [kind, visitors] of Object.entries(this.visitors)) {
+      if (visitors.length > 0) {
+        visitors.sort((a, b) => compare(a.id, b.id));
+        const visitorProperties = [];
+        for (const visitor of visitors) {
+          const { id } = visitor;
+          const idIdentifier = module.addImport(`./${id}`, id);
+          visitorProperties.push(ts.createShorthandPropertyAssignment(idIdentifier));
+        }
+        kindProperties.push(ts.createPropertyAssignment(kind, ts.createObjectLiteral(visitorProperties, true)));
+      }
     }
     const gqlsqlId = module.addNamespaceImport(this.config.gqlsqlModule, this.config.gqlsqlNamespace);
-    const visitorsType = ts.createTypeReferenceNode(ts.createQualifiedName(gqlsqlId, TypeVisitorsType), [
-      ts.createTypeReferenceNode(ts.createQualifiedName(gqlsqlId, SqlQueryResolverType), undefined)
+    const visitorsType = ts.createTypeReferenceNode(PartialType, [
+      ts.createTypeReferenceNode(ts.createQualifiedName(gqlsqlId, SqlTypeVisitorsType), undefined)
     ]);
-    const visitorsId = module.declareConst(VisitorsConst, visitorsType, ts.createObjectLiteral(properties, true));
+    const visitorsId = module.declareConst(VisitorsConst, visitorsType, ts.createObjectLiteral(kindProperties, true));
     module.addStatement(ts.createExportDefault(visitorsId));
     return module;
   }
