@@ -1,10 +1,25 @@
-"""Indicates fields that define the type's (internal) identity. Typically used for join tables. Implicitly immutable."""
+"""
+Indicates fields that define the type's (internal) identity (and its table's primary key).
+If no fields have @id, but there is a @rid or @sid field, the table is given a (hidden)
+auto-increment ID that is used as its primary key. Therefore, @id is typically only used
+for join tables. Implicitly immutable.
+"""
 directive @id on FIELD_DEFINITION
 
-"""Indicates a field containing a type's randomly-generated external identity string. Implicitly read-only."""
+"""
+Indicates a field containing a type's randomly-generated external identity string.
+If the containing type also has a table ID assigned (assigned by `@sqlTable(id)`),
+this ID string will be automatically prefixed with it. The prefix can be used (and
+in such cases is required) if the type is referenced by interface or union.
+Only one field per type may have a @rid or @sid directive.
+Implicitly read-only.
+"""
 directive @rid on FIELD_DEFINITION
 
-"""Indicates that an input field's type is a randomly-generated external identity string referring to an object of the given type."""
+"""
+Indicates that an input field's type is a randomly-generated external identity string
+referring to an object of the given type.
+"""
 directive @ridRef(
   """
   The type of object to which the ID field refers.
@@ -13,13 +28,20 @@ directive @ridRef(
   type: String!
 ) on INPUT_FIELD_DEFINITION
 
-"""Indicates a field containing a type's explicitly-specified external identity string. Implicitly immutable."""
+"""
+Indicates a field containing a type's explicitly-specified external identity string.
+Only one field per type may have a @rid or @sid directive.
+Implicitly immutable.
+"""
 directive @sid(
   """The maximum length of the ID."""
   maxLength: Int!
 ) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
 
-"""Indicates that an input field's type is an explicitly-specified external identity string referring to an object of the given type."""
+"""
+Indicates that an input field's type is an explicitly-specified external identity string
+referring to an object of the given type.
+"""
 directive @sidRef(
   """The maximum length of the ID."""
   maxLength: Int!
@@ -60,11 +82,36 @@ directive @length(
 """Provides a regular expression used to validate a string field."""
 directive @regex(value: String!) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
 
-"""Indicates that an enum field of an interface indicates the concrete type of each object. Implicitly read-only."""
+"""
+Declares that the associated enum field indicates the concrete type of the containing interface for each object.
+Every value of the enum must correspond to an object type that implements the containing interface.
+Currently, correspondence is solely established by converting the enum value name to Pascal case.
+Only one field per type may have a @typeDiscriminator directive.
+A given enum type may only act as a discriminator for a single interface.
+Implicitly read-only.
+"""
 directive @typeDiscriminator on FIELD_DEFINITION
 
 """Indicates that a Date or DateTime field always contains the creation date of the object. Implicitly read-only."""
 directive @createdAt on FIELD_DEFINITION
+
+"""
+Indicates that objects of the containing type should be marked as deleted, rather than being
+actually deleted, and that the associated field indicates whether the object has been deleted.
+The field must have Boolean!, Date, or DateTime type. If the field is Boolean!, its value is
+false if the object exists or true if it has been deleted. If the field is Date or DateTime,
+its value is null if the object exists or the date/time at which it was deleted.
+Only one field per type may have a @softDelete directive.
+Implicitly read-only (except indirectly by delete mutation).
+"""
+directive @softDelete(
+  """
+  When deleting records that refer to the soft-deleted object, retain any references in objects of the given types.
+  Normally, when hard-deleting an object, any references to it will be removed. If a reference is not nullable,
+  the referring object will be deleted, which can result in a cascade of deletes.
+  """
+  retain: [String!]
+) on FIELD_DEFINITION
 
 """Indicates that a field can be specified on creation, but not subsequently updated."""
 directive @immutable on FIELD_DEFINITION
