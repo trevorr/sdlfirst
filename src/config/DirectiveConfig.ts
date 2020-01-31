@@ -17,6 +17,7 @@ export interface DirectiveConfig {
   randomIdRefDirective: string;
   readonlyDirective: string;
   regexDirective: string;
+  softDeleteDirective: string;
   sqlColumnDirective: string;
   sqlTableDirective: string;
   sqlTypeDirective: string;
@@ -50,6 +51,7 @@ export const defaultConfig: DirectiveConfig = {
   randomIdRefDirective: 'ridRef',
   readonlyDirective: 'readonly',
   regexDirective: 'regex',
+  softDeleteDirective: 'softDelete',
   sqlColumnDirective: 'sqlColumn',
   sqlTableDirective: 'sqlTable',
   sqlTypeDirective: 'sqlType',

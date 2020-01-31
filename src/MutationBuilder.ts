@@ -50,6 +50,7 @@ import { unwrapType, wrapType } from './util/graphql-util';
 type FieldType = GraphQLField<any, any>;
 
 export const CLIENT_MUTATION_ID = 'clientMutationId';
+export const DELETED_FLAG = 'deleted';
 const DEFAULT_MUTATION_TYPE_NAME = 'Mutation';
 
 export class MutationBuilder {
@@ -154,7 +155,7 @@ export class MutationBuilder {
                   description: `Automatically generated output type for ${this.mutationTypeName}.delete${type.name}`,
                   fields: {
                     [CLIENT_MUTATION_ID]: { type: GraphQLString },
-                    deleted: { type: new GraphQLNonNull(GraphQLBoolean) }
+                    [DELETED_FLAG]: { type: new GraphQLNonNull(GraphQLBoolean) }
                   }
                 })
               ),
@@ -551,6 +552,7 @@ export class MutationBuilder {
       this.config.internalIdDirective,
       this.config.randomIdDirective,
       this.config.readonlyDirective,
+      this.config.softDeleteDirective,
       this.config.typeDiscriminatorDirective,
       this.config.updatedAtDirective
     ]);

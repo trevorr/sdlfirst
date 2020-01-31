@@ -67,6 +67,9 @@ export interface TypeInfo<T = AnalyzedType> {
   // field used to determine concrete type of interface
   typeDiscriminatorField?: FieldType;
 
+  // field indicating whether object has been deleted
+  softDeleteField?: FieldType;
+
   // true iff object or @sqlTable interface
   hasTable: boolean;
 
@@ -355,24 +358,44 @@ export class Analyzer {
 
   private analyzeField(typeInfo: TableTypeInfo, field: FieldType, fieldType: GraphQLOutputType): void {
     const { type } = typeInfo;
-    fieldType = getNullableType(fieldType);
-    if (isScalarType(fieldType)) {
-      typeInfo.hasData = true; // a value
-    } else if (isEnumType(fieldType)) {
-      typeInfo.hasData = true; // a value
-      const tdDir = findFirstDirective(field, this.config.typeDiscriminatorDirective);
-      if (tdDir && isInterfaceType(type)) {
-        this.analyzeTypeDiscriminator(fieldType, typeInfo as TypeInfo<GraphQLInterfaceType>);
-        typeInfo.typeDiscriminatorField = field;
+    const nullableFieldType = getNullableType(fieldType);
+
+    if (hasDirective(field, this.config.typeDiscriminatorDirective)) {
+      if (!isInterfaceType(type)) {
+        throw new Error(`Non-interface type "${type.name}" cannot have a @typeDiscriminator field`);
       }
-    } else if (isObjectType(fieldType)) {
-      if (this.isConnectionType(fieldType)) {
-        this.analyzeConnectionType(fieldType).referringFields.push({
+      if (!isEnumType(nullableFieldType)) {
+        throw new Error(`Non-enum field "${type.name}.${field.name}" cannot use @typeDiscriminator`);
+      }
+      if (typeInfo.typeDiscriminatorField) {
+        throw new Error(`Type "${type.name}" cannot have more than one @typeDiscriminator field`);
+      }
+      this.analyzeTypeDiscriminator(nullableFieldType, typeInfo as TypeInfo<GraphQLInterfaceType>);
+      typeInfo.typeDiscriminatorField = field;
+    }
+
+    if (hasDirective(field, this.config.softDeleteDirective)) {
+      if (!isSoftDeleteType(fieldType)) {
+        throw new Error(`Field "${type.name}.${field.name}" of type "${fieldType.toString()}" cannot use @softDelete`);
+      }
+      if (typeInfo.softDeleteField) {
+        throw new Error(`Type "${type.name}" cannot have more than one @softDelete field`);
+      }
+      typeInfo.softDeleteField = field;
+    }
+
+    if (isScalarType(nullableFieldType)) {
+      typeInfo.hasData = true; // a value
+    } else if (isEnumType(nullableFieldType)) {
+      typeInfo.hasData = true; // a value
+    } else if (isObjectType(nullableFieldType)) {
+      if (this.isConnectionType(nullableFieldType)) {
+        this.analyzeConnectionType(nullableFieldType).referringFields.push({
           type,
           field
         });
       } else if (!hasDirective(type, this.config.sqlTypeDirective)) {
-        const fieldTypeInfo = this.analyzeFields(fieldType);
+        const fieldTypeInfo = this.analyzeFields(nullableFieldType);
         fieldTypeInfo.referringFields.push({ type, field });
         if (fieldTypeInfo.hasIdentity) {
           typeInfo.hasData = true; // an ID
@@ -380,27 +403,27 @@ export class Analyzer {
       } else {
         typeInfo.hasData = true; // a value
       }
-    } else if (isInterfaceType(fieldType)) {
-      if (hasDirective(fieldType, this.config.sqlTableDirective)) {
-        this.analyzeFields(fieldType).referringFields.push({ type, field });
+    } else if (isInterfaceType(nullableFieldType)) {
+      if (hasDirective(nullableFieldType, this.config.sqlTableDirective)) {
+        this.analyzeFields(nullableFieldType).referringFields.push({ type, field });
       }
       typeInfo.hasData = true; // an ID
-    } else if (isUnionType(fieldType)) {
-      const fieldTypeInfo = this.analyzeUnion(fieldType);
+    } else if (isUnionType(nullableFieldType)) {
+      const fieldTypeInfo = this.analyzeUnion(nullableFieldType);
       if (fieldTypeInfo.identityTypeInfo) {
         // if the type's identity comes from a another type, use it as the union target
         fieldTypeInfo.identityTypeInfo.referringFields.push({ type, field });
       } else {
         // otherwise link to all tables in the union
-        for (const member of fieldType.getTypes()) {
+        for (const member of nullableFieldType.getTypes()) {
           this.analyzeFields(member).referringFields.push({ type, field });
         }
       }
       typeInfo.hasData = true; // an ID and possibly discriminator
-    } else if (isListType(fieldType)) {
-      this.analyzeField(typeInfo, field, fieldType.ofType);
+    } else if (isListType(nullableFieldType)) {
+      this.analyzeField(typeInfo, field, nullableFieldType.ofType);
     } else {
-      throw new Error(`Unrecognized field type: ${(fieldType as GraphQLOutputType).toString()}`);
+      throw new Error(`Unrecognized field type: ${(nullableFieldType as GraphQLOutputType).toString()}`);
     }
   }
 
@@ -789,4 +812,19 @@ export class Analyzer {
     typeInfo.minIntValue = minIntValue;
     typeInfo.maxIntValue = maxIntValue;
   }
+}
+
+function isSoftDeleteType(type: GraphQLType): boolean {
+  const nonNull = isNonNullType(type);
+  const nullableType = getNullableType(type);
+  if (isScalarType(nullableType)) {
+    switch (nullableType.name) {
+      case 'Boolean':
+        return nonNull;
+      case 'Date':
+      case 'DateTime':
+        return !nonNull;
+    }
+  }
+  return false;
 }
