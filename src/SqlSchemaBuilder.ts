@@ -174,14 +174,17 @@ export class SqlSchemaBuilder {
       mapping.fieldsMapped = FieldsMapped.ALL_KEYS;
     }
 
-    // emit remaining non-key columns
-    this.emitColumnsForFields(mapping, typeInfo, fieldNames);
+    if (mapping.fieldsMapped === FieldsMapped.ALL_KEYS) {
+      // emit remaining non-key columns
+      this.emitColumnsForFields(mapping, typeInfo, fieldNames);
 
-    // add any keys from @sqlTable directive
-    const tableDir = findFirstDirective(type, this.config.sqlTableDirective);
-    const keysArg = tableDir ? getDirectiveArgument(tableDir, 'keys') : null;
-    if (keysArg != null) {
-      this.emitKeys(table, keysArg);
+      // add any keys from @sqlTable directive
+      const tableDir = findFirstDirective(type, this.config.sqlTableDirective);
+      const keysArg = tableDir ? getDirectiveArgument(tableDir, 'keys') : null;
+      if (keysArg != null) {
+        this.emitKeys(table, keysArg);
+      }
+      mapping.fieldsMapped = FieldsMapped.ALL_DATA;
     }
 
     return mapping;
@@ -214,16 +217,13 @@ export class SqlSchemaBuilder {
     typeInfo: TypeInfo<TableType>,
     fieldNames?: Iterable<string>
   ): void {
-    if (mapping.fieldsMapped === FieldsMapped.ALL_KEYS) {
-      const fields = typeInfo.type.getFields();
-      if (!fieldNames) {
-        fieldNames = Object.keys(fields);
-      }
-      mapping.fieldsMapped = FieldsMapped.SOME_DATA;
-      for (const fieldName of fieldNames) {
-        this.emitColumnsForField(mapping, typeInfo, fields[fieldName]);
-      }
-      mapping.fieldsMapped = FieldsMapped.ALL_DATA;
+    const fields = typeInfo.type.getFields();
+    if (!fieldNames) {
+      fieldNames = Object.keys(fields);
+    }
+    mapping.fieldsMapped = FieldsMapped.SOME_DATA;
+    for (const fieldName of fieldNames) {
+      this.emitColumnsForField(mapping, typeInfo, fields[fieldName]);
     }
   }
 
@@ -382,6 +382,7 @@ export class SqlSchemaBuilder {
             joinTableMapping.fieldsMapped = FieldsMapped.ALL_KEYS;
             this.emitColumnsForFields(joinTableMapping, edgeTypeInfo, otherEdgeFieldNames);
             this.emitJoinTableKeys(joinTableMapping.table, field);
+            joinTableMapping.fieldsMapped = FieldsMapped.ALL_DATA;
           }
           mapping.fieldMappings.set(field, {
             field,
@@ -416,6 +417,7 @@ export class SqlSchemaBuilder {
             joinTableMapping.fieldsMapped = FieldsMapped.ALL_KEYS;
             this.emitColumnsForFields(joinTableMapping, fieldTypeInfo);
             this.emitJoinTableKeys(joinTableMapping.table, field);
+            joinTableMapping.fieldsMapped = FieldsMapped.ALL_DATA;
           }
           mapping.fieldMappings.set(field, { field, toTable: joinTableMapping });
         } else {
@@ -481,17 +483,27 @@ export class SqlSchemaBuilder {
           name,
           type: unique ? SqlKeyType.UNIQUE : SqlKeyType.INDEX,
           parts: columnNames.map(columnName => {
+            let descending = false;
+            const parts = columnName.split(' ');
+            if (parts.length > 1) {
+              columnName = parts[0];
+              const direction = parts[1].toLowerCase();
+              if (direction === 'desc') {
+                descending = true;
+              } else if (direction !== 'asc') {
+                throw new Error(`Invalid direction for column "${columnName}" of "${table.name}": ${parts[1]}`);
+              }
+            }
             const column = table.columns.find(column => column.name === columnName);
             if (column == null) {
               throw new Error(
-                `Column "${columnName}" not found in table "${name}" for ${
-                  keyName ? `key "${keyName}"` : 'unnamed key'
-                }`
+                `Column "${columnName}" not found in table "${table.name}" for key "${name}"` +
+                  `; known columns: ${table.columns.map(column => column.name).join(', ')}`
               );
             }
             return {
               column,
-              descending: false
+              descending
             };
           })
         });
