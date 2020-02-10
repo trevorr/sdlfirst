@@ -25,6 +25,7 @@ import {
   GraphQLType,
   InputValueDefinitionNode,
   isCompositeType,
+  isInputObjectType,
   isInputType,
   isInterfaceType,
   isListType,
@@ -80,7 +81,7 @@ export class MutationBuilder {
         fields: {}
       };
     }
-    const crudMutations = this.generateMutations();
+    const crudMutations = this.generateMutations(Object.keys(mutationConfig.fields));
     mutationConfig.fields = Object.fromEntries(Object.entries(mutationConfig.fields).concat(crudMutations));
     schemaConfig.mutation = new GraphQLObjectType(mutationConfig);
 
@@ -98,70 +99,80 @@ export class MutationBuilder {
     return new GraphQLSchema(schemaConfig);
   }
 
-  public generateMutations(): [string, GraphQLFieldConfig<any, any>][] {
+  public generateMutations(existingFields: string[]): [string, GraphQLFieldConfig<any, any>][] {
+    const existingSet = new Set(existingFields);
     const fields: [string, GraphQLFieldConfig<any, any>][] = [];
     for (const typeInfo of this.analyzer.getTypeInfos()) {
       if (this.isConcreteEntityTable(typeInfo)) {
         const { type } = typeInfo;
         // TODO: @create
-        const createType = this.getCreateType(type, false);
-        if (createType) {
-          fields.push([
-            `create${type.name}`,
-            {
-              type: new GraphQLNonNull(
-                new GraphQLObjectType({
-                  name: `Create${type.name}Payload`,
-                  description: `Automatically generated output type for ${this.mutationTypeName}.create${type.name}`,
-                  fields: {
-                    [CLIENT_MUTATION_ID]: { type: GraphQLString },
-                    [lcFirst(type.name)]: { type: new GraphQLNonNull(type) }
-                  }
-                })
-              ),
-              args: { input: { type: new GraphQLNonNull(createType) } }
-            }
-          ]);
+        const createName = `create${type.name}`;
+        if (!existingSet.has(createName)) {
+          const createType = this.getCreateType(type, false);
+          if (createType) {
+            fields.push([
+              `create${type.name}`,
+              {
+                type: new GraphQLNonNull(
+                  new GraphQLObjectType({
+                    name: `Create${type.name}Payload`,
+                    description: `Automatically generated output type for ${this.mutationTypeName}.create${type.name}`,
+                    fields: {
+                      [CLIENT_MUTATION_ID]: { type: GraphQLString },
+                      [lcFirst(type.name)]: { type: new GraphQLNonNull(type) }
+                    }
+                  })
+                ),
+                args: { input: { type: new GraphQLNonNull(createType) } }
+              }
+            ]);
+          }
         }
         // TODO: @update
-        const updateType = this.getUpdateType(type, false);
-        if (updateType) {
-          fields.push([
-            `update${type.name}`,
-            {
-              type: new GraphQLNonNull(
-                new GraphQLObjectType({
-                  name: `Update${type.name}Payload`,
-                  description: `Automatically generated output type for ${this.mutationTypeName}.update${type.name}`,
-                  fields: {
-                    [CLIENT_MUTATION_ID]: { type: GraphQLString },
-                    [lcFirst(type.name)]: { type: new GraphQLNonNull(type) }
-                  }
-                })
-              ),
-              args: { input: { type: new GraphQLNonNull(updateType) } }
-            }
-          ]);
+        const updateName = `update${type.name}`;
+        if (!existingSet.has(updateName)) {
+          const updateType = this.getUpdateType(type, false);
+          if (updateType) {
+            fields.push([
+              updateName,
+              {
+                type: new GraphQLNonNull(
+                  new GraphQLObjectType({
+                    name: `Update${type.name}Payload`,
+                    description: `Automatically generated output type for ${this.mutationTypeName}.update${type.name}`,
+                    fields: {
+                      [CLIENT_MUTATION_ID]: { type: GraphQLString },
+                      [lcFirst(type.name)]: { type: new GraphQLNonNull(type) }
+                    }
+                  })
+                ),
+                args: { input: { type: new GraphQLNonNull(updateType) } }
+              }
+            ]);
+          }
         }
         // TODO: @delete
-        const deleteType = this.getDeleteType(type);
-        if (deleteType) {
-          fields.push([
-            `delete${type.name}`,
-            {
-              type: new GraphQLNonNull(
-                new GraphQLObjectType({
-                  name: `Delete${type.name}Payload`,
-                  description: `Automatically generated output type for ${this.mutationTypeName}.delete${type.name}`,
-                  fields: {
-                    [CLIENT_MUTATION_ID]: { type: GraphQLString },
-                    [DELETED_FLAG]: { type: new GraphQLNonNull(GraphQLBoolean) }
-                  }
-                })
-              ),
-              args: { input: { type: new GraphQLNonNull(deleteType) } }
-            }
-          ]);
+        const deleteName = `delete${type.name}`;
+        if (!existingSet.has(deleteName)) {
+          const deleteType = this.getDeleteType(type);
+          if (deleteType) {
+            fields.push([
+              deleteName,
+              {
+                type: new GraphQLNonNull(
+                  new GraphQLObjectType({
+                    name: `Delete${type.name}Payload`,
+                    description: `Automatically generated output type for ${this.mutationTypeName}.delete${type.name}`,
+                    fields: {
+                      [CLIENT_MUTATION_ID]: { type: GraphQLString },
+                      [DELETED_FLAG]: { type: new GraphQLNonNull(GraphQLBoolean) }
+                    }
+                  })
+                ),
+                args: { input: { type: new GraphQLNonNull(deleteType) } }
+              }
+            ]);
+          }
         }
       }
     }
@@ -179,35 +190,44 @@ export class MutationBuilder {
   private getCreateType(type: GraphQLObjectType, nested: boolean): GraphQLInputObjectType | null {
     let createType = this.createTypes.get(type);
     if (createType === undefined) {
-      const fields = Object.values(type.getFields())
-        .map(f => this.getCreateInputField(f, type.name))
-        .filter(notNull);
-      if (fields.length > 0) {
-        if (!nested) {
-          fields.unshift([
-            CLIENT_MUTATION_ID,
-            { type: GraphQLString, astNode: makeInputValueDefinitionNode(CLIENT_MUTATION_ID, GraphQLString) }
-          ]);
+      const name = `Create${type.name}Input`;
+      const existingType = this.schema.getType(name);
+      if (existingType) {
+        if (isInputObjectType(existingType)) {
+          createType = existingType;
+        } else {
+          throw new Error(`Generated input type ${name} conflicts with existing type`);
         }
-        const name = `Create${type.name}Input`;
-        const description = `Automatically generated input type for ${this.mutationTypeName}.create${type.name}`;
-        createType = new GraphQLInputObjectType({
-          name,
-          description,
-          fields: Object.fromEntries(fields),
-          astNode: {
-            kind: 'InputObjectTypeDefinition',
-            name: makeNameNode(name),
-            description: {
-              kind: 'StringValue',
-              value: description,
-              block: true
-            },
-            fields: fields.map(f => f[1].astNode!)
-          }
-        });
       } else {
-        createType = null;
+        const fields = Object.values(type.getFields())
+          .map(f => this.getCreateInputField(f, type.name))
+          .filter(notNull);
+        if (fields.length > 0) {
+          if (!nested) {
+            fields.unshift([
+              CLIENT_MUTATION_ID,
+              { type: GraphQLString, astNode: makeInputValueDefinitionNode(CLIENT_MUTATION_ID, GraphQLString) }
+            ]);
+          }
+          const description = `Automatically generated input type for ${this.mutationTypeName}.create${type.name}`;
+          createType = new GraphQLInputObjectType({
+            name,
+            description,
+            fields: Object.fromEntries(fields),
+            astNode: {
+              kind: 'InputObjectTypeDefinition',
+              name: makeNameNode(name),
+              description: {
+                kind: 'StringValue',
+                value: description,
+                block: true
+              },
+              fields: fields.map(f => f[1].astNode!)
+            }
+          });
+        } else {
+          createType = null;
+        }
       }
       this.createTypes.set(type, createType);
     }
@@ -312,49 +332,58 @@ export class MutationBuilder {
   private getUpdateType(type: GraphQLObjectType, nested: boolean): GraphQLInputObjectType | null {
     let updateType = this.updateTypes.get(type);
     if (updateType === undefined) {
-      const typeInfo = this.analyzer.findTypeInfo(type);
-      const externalIdField = typeInfo ? typeInfo.externalIdField : null;
-      const fields = Object.values(type.getFields())
-        .map(f => this.getUpdateInputField(f))
-        .filter(notNull);
-      if (fields.length > 0 && (externalIdField || nested)) {
-        if (externalIdField) {
-          const externalIdType = new GraphQLNonNull(assertScalarType(getNullableType(externalIdField.type)));
-          fields.unshift([
-            externalIdField.name,
-            {
-              type: externalIdType,
-              astNode: makeInputValueDefinitionNode(externalIdField.name, externalIdType, [
-                this.getExternalIdRefDirective(typeInfo?.externalIdDirective!, type.name)!
-              ])
-            }
-          ]);
+      const name = `Update${type.name}Input`;
+      const existingType = this.schema.getType(name);
+      if (existingType) {
+        if (isInputObjectType(existingType)) {
+          updateType = existingType;
+        } else {
+          throw new Error(`Generated input type ${name} conflicts with existing type`);
         }
-        if (!nested) {
-          fields.unshift([
-            CLIENT_MUTATION_ID,
-            { type: GraphQLString, astNode: makeInputValueDefinitionNode(CLIENT_MUTATION_ID, GraphQLString) }
-          ]);
-        }
-        const name = `Update${type.name}Input`;
-        const description = `Automatically generated input type for ${this.mutationTypeName}.update${type.name}`;
-        updateType = new GraphQLInputObjectType({
-          name,
-          description,
-          fields: Object.fromEntries(fields),
-          astNode: {
-            kind: 'InputObjectTypeDefinition',
-            name: makeNameNode(name),
-            description: {
-              kind: 'StringValue',
-              value: description,
-              block: true
-            },
-            fields: fields.map(f => f[1].astNode!)
-          }
-        });
       } else {
-        updateType = null;
+        const typeInfo = this.analyzer.findTypeInfo(type);
+        const externalIdField = typeInfo ? typeInfo.externalIdField : null;
+        const fields = Object.values(type.getFields())
+          .map(f => this.getUpdateInputField(f))
+          .filter(notNull);
+        if (fields.length > 0 && (externalIdField || nested)) {
+          if (externalIdField) {
+            const externalIdType = new GraphQLNonNull(assertScalarType(getNullableType(externalIdField.type)));
+            fields.unshift([
+              externalIdField.name,
+              {
+                type: externalIdType,
+                astNode: makeInputValueDefinitionNode(externalIdField.name, externalIdType, [
+                  this.getExternalIdRefDirective(typeInfo?.externalIdDirective!, type.name)!
+                ])
+              }
+            ]);
+          }
+          if (!nested) {
+            fields.unshift([
+              CLIENT_MUTATION_ID,
+              { type: GraphQLString, astNode: makeInputValueDefinitionNode(CLIENT_MUTATION_ID, GraphQLString) }
+            ]);
+          }
+          const description = `Automatically generated input type for ${this.mutationTypeName}.update${type.name}`;
+          updateType = new GraphQLInputObjectType({
+            name,
+            description,
+            fields: Object.fromEntries(fields),
+            astNode: {
+              kind: 'InputObjectTypeDefinition',
+              name: makeNameNode(name),
+              description: {
+                kind: 'StringValue',
+                value: description,
+                block: true
+              },
+              fields: fields.map(f => f[1].astNode!)
+            }
+          });
+        } else {
+          updateType = null;
+        }
       }
       this.updateTypes.set(type, updateType);
     }
@@ -500,44 +529,53 @@ export class MutationBuilder {
   private getDeleteType(type: GraphQLObjectType): GraphQLInputObjectType | null {
     let deleteType = this.deleteTypes.get(type);
     if (deleteType === undefined) {
-      const typeInfo = this.analyzer.findTypeInfo(type);
-      if (typeInfo && typeInfo.externalIdField) {
-        const { externalIdField } = typeInfo;
-        const externalIdType = new GraphQLNonNull(assertScalarType(getNullableType(externalIdField.type)));
-        const fields: [string, GraphQLInputFieldConfig][] = [
-          [
-            CLIENT_MUTATION_ID,
-            { type: GraphQLString, astNode: makeInputValueDefinitionNode(CLIENT_MUTATION_ID, GraphQLString) }
-          ],
-          [
-            externalIdField.name,
-            {
-              type: externalIdType,
-              astNode: makeInputValueDefinitionNode(externalIdField.name, externalIdType, [
-                this.getExternalIdRefDirective(typeInfo.externalIdDirective!, type.name)!
-              ])
-            }
-          ]
-        ];
-        const name = `Delete${type.name}Input`;
-        const description = `Automatically generated input type for ${this.mutationTypeName}.delete${type.name}`;
-        deleteType = new GraphQLInputObjectType({
-          name,
-          description,
-          fields: Object.fromEntries(fields),
-          astNode: {
-            kind: 'InputObjectTypeDefinition',
-            name: makeNameNode(name),
-            description: {
-              kind: 'StringValue',
-              value: description,
-              block: true
-            },
-            fields: fields.map(f => f[1].astNode!)
-          }
-        });
+      const name = `Delete${type.name}Input`;
+      const existingType = this.schema.getType(name);
+      if (existingType) {
+        if (isInputObjectType(existingType)) {
+          deleteType = existingType;
+        } else {
+          throw new Error(`Generated input type ${name} conflicts with existing type`);
+        }
       } else {
-        deleteType = null;
+        const typeInfo = this.analyzer.findTypeInfo(type);
+        if (typeInfo && typeInfo.externalIdField) {
+          const { externalIdField } = typeInfo;
+          const externalIdType = new GraphQLNonNull(assertScalarType(getNullableType(externalIdField.type)));
+          const fields: [string, GraphQLInputFieldConfig][] = [
+            [
+              CLIENT_MUTATION_ID,
+              { type: GraphQLString, astNode: makeInputValueDefinitionNode(CLIENT_MUTATION_ID, GraphQLString) }
+            ],
+            [
+              externalIdField.name,
+              {
+                type: externalIdType,
+                astNode: makeInputValueDefinitionNode(externalIdField.name, externalIdType, [
+                  this.getExternalIdRefDirective(typeInfo.externalIdDirective!, type.name)!
+                ])
+              }
+            ]
+          ];
+          const description = `Automatically generated input type for ${this.mutationTypeName}.delete${type.name}`;
+          deleteType = new GraphQLInputObjectType({
+            name,
+            description,
+            fields: Object.fromEntries(fields),
+            astNode: {
+              kind: 'InputObjectTypeDefinition',
+              name: makeNameNode(name),
+              description: {
+                kind: 'StringValue',
+                value: description,
+                block: true
+              },
+              fields: fields.map(f => f[1].astNode!)
+            }
+          });
+        } else {
+          deleteType = null;
+        }
       }
       this.deleteTypes.set(type, deleteType);
     }
