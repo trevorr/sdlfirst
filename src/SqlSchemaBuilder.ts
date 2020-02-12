@@ -2,8 +2,6 @@ import assert from 'assert';
 import {
   ArgumentNode,
   BooleanValueNode,
-  getNamedType,
-  getNullableType,
   GraphQLCompositeType,
   GraphQLNamedType,
   GraphQLObjectType,
@@ -22,7 +20,7 @@ import {
   StringValueNode
 } from 'graphql';
 import { snakeCase } from 'snake-case';
-import { Analyzer, EnumValueType, FieldType, TableType, TypeInfo } from './Analyzer';
+import { Analyzer, EnumValueType, FieldType, TableType, TypeInfo, isConnectionFieldInfo } from './Analyzer';
 import { defaultConfig, SqlConfig } from './config/SqlConfig';
 import { SqlColumn } from './model/SqlColumn';
 import { SqlKeyType } from './model/SqlKey';
@@ -333,25 +331,35 @@ export class SqlSchemaBuilder {
         sqlType = 'int(11)';
       }
     } else if (isObjectType(fieldType)) {
-      if (this.analyzer.isConnectionType(fieldType)) {
+      const fieldInfo = this.analyzer.findFieldInfo(field);
+      if (fieldInfo && isConnectionFieldInfo(fieldInfo)) {
         // one:many or many:many relation following the Relay connection pattern
-        const edgeType = this.analyzer.getEdgeTypeForConnection(fieldType);
-        const edgeTypeInfo = this.analyzer.getTypeInfo(edgeType);
-        const edgeFields = edgeType.getFields();
-        const { node } = edgeFields;
-        const nodeType = getNullableType(node.type);
+        const { edgeTypeInfo } = fieldInfo;
+        const nodeType = edgeTypeInfo.nodeType!;
         if (!isCompositeType(nodeType)) {
           throw new Error(`Unsupported connection node type "${fieldType.name}"${formatLocationOf(field.astNode)}`);
         }
         const nodeTableMapping = this.getNodeTable(nodeType);
-        const nmtmDir = findFirstDirective(field, this.config.newManyToManyDirective);
-        const umtmDir = findFirstDirective(field, this.config.useManyToManyDirective);
-        const nodeBackrefField = this.analyzer.findNodeBackrefField(nodeType, typeInfo.type, field);
-        const nodeBackrefJoin = this.analyzer.getNodeBackrefJoin(nodeType, typeInfo.type, field);
-        const otherEdgeFieldNames = Object.keys(edgeFields).filter(k => k !== 'cursor' && k !== 'node');
-        if (umtmDir != null) {
+
+        if (!fieldInfo.hasEdgeTable) {
+          // one:many join using back-reference field (node field of this type)
+          // or join (node fields corresponding to fields of this type)
+          const fieldMapping: FieldJoin = { field, toTable: nodeTableMapping };
+          if (fieldInfo.nodeBackrefField) {
+            fieldMapping.toFields = [fieldInfo.nodeBackrefField];
+          } else {
+            fieldMapping.fromFields = fieldInfo.nodeBackrefJoin!.map(pair => pair[1] || pair[0]);
+            fieldMapping.toFields = fieldInfo.nodeBackrefJoin!.map(pair => pair[0]);
+          }
+          mapping.fieldMappings.set(field, fieldMapping);
+          return [];
+        }
+
+        const { relationDirective } = fieldInfo;
+        const edgeType = edgeTypeInfo.type as GraphQLObjectType;
+        if (relationDirective && relationDirective.name.value === this.config.useManyToManyDirective) {
           // use existing many:many join table created for another field (i.e. the inverse relation)
-          const fieldArg = getRequiredDirectiveArgument(umtmDir, 'tableName', 'StringValue');
+          const fieldArg = getRequiredDirectiveArgument(relationDirective, 'tableName', 'StringValue');
           const tableName = (fieldArg.value as StringValueNode).value;
           let joinTableMapping = this.tableMappingByName.get(tableName);
           if (!joinTableMapping) {
@@ -363,45 +371,42 @@ export class SqlSchemaBuilder {
             pkPrefix: false,
             nodeTable: nodeTableMapping
           });
-        } else if (nmtmDir != null || (!nodeBackrefField && !nodeBackrefJoin) || otherEdgeFieldNames.length > 0) {
-          // create a many:many join table if required by directive, lack of back-reference, or edge fields
-          const joinTableMapping = this.getJoinTable(table, typeInfo, field, edgeType);
-          if (joinTableMapping.fieldsMapped === FieldsMapped.SOME_KEYS) {
-            const { node } = edgeFields;
-            ({ name, explicitName } = getColumnNameInfo(node, this.config, snakeCase(getNamedType(nodeType).name)));
-            notNull = isNonNullType(node.type);
-            const refCols = this.addTypeReferenceColumns(
-              joinTableMapping.table,
-              nodeType,
-              name,
-              explicitName,
-              notNull,
-              uniqueKey
-            );
-            joinTableMapping.table.primaryKey.parts.push(...refCols.map(column => ({ column, descending: false })));
-            joinTableMapping.fieldsMapped = FieldsMapped.ALL_KEYS;
-            this.emitColumnsForFields(joinTableMapping, edgeTypeInfo, otherEdgeFieldNames);
-            this.emitJoinTableKeys(joinTableMapping.table, field);
-            joinTableMapping.fieldsMapped = FieldsMapped.ALL_DATA;
-          }
-          mapping.fieldMappings.set(field, {
-            field,
-            toTable: joinTableMapping,
-            pkPrefix: true,
-            nodeTable: nodeTableMapping
-          });
-        } else {
-          // one:many join using back-reference field (node field of this type)
-          // or join (node fields corresponding to fields of this type)
-          const fieldMapping: FieldJoin = { field, toTable: nodeTableMapping };
-          if (nodeBackrefField) {
-            fieldMapping.toFields = [nodeBackrefField];
-          } else {
-            fieldMapping.fromFields = nodeBackrefJoin!.map(pair => pair[1] || pair[0]);
-            fieldMapping.toFields = nodeBackrefJoin!.map(pair => pair[0]);
-          }
-          mapping.fieldMappings.set(field, fieldMapping);
+          return [];
         }
+
+        // create a many:many join table if required by directive, lack of back-reference, or edge fields
+        const joinTableMapping = this.getJoinTable(table, typeInfo, field, edgeType);
+        if (joinTableMapping.fieldsMapped === FieldsMapped.SOME_KEYS) {
+          const { node } = edgeType.getFields();
+          ({ name, explicitName } = getColumnNameInfo(node, this.config, snakeCase(nodeType.name)));
+          notNull = isNonNullType(node.type);
+          const refCols = this.addTypeReferenceColumns(
+            joinTableMapping.table,
+            nodeType,
+            name,
+            explicitName,
+            notNull,
+            uniqueKey
+          );
+          joinTableMapping.table.primaryKey.parts.push(...refCols.map(column => ({ column, descending: false })));
+          joinTableMapping.fieldsMapped = FieldsMapped.ALL_KEYS;
+          const { extraEdgeFields } = edgeTypeInfo;
+          if (extraEdgeFields) {
+            this.emitColumnsForFields(
+              joinTableMapping,
+              edgeTypeInfo,
+              extraEdgeFields.map(f => f.name)
+            );
+          }
+          this.emitJoinTableKeys(joinTableMapping.table, field);
+          joinTableMapping.fieldsMapped = FieldsMapped.ALL_DATA;
+        }
+        mapping.fieldMappings.set(field, {
+          field,
+          toTable: joinTableMapping,
+          pkPrefix: true,
+          nodeTable: nodeTableMapping
+        });
         return [];
       } else {
         const fieldTypeInfo = this.analyzer.getTypeInfo(fieldType);

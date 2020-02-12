@@ -13,6 +13,7 @@ import {
   GraphQLType,
   GraphQLUnionType,
   IntValueNode,
+  isCompositeType,
   isEnumType,
   isInterfaceType,
   isListType,
@@ -84,6 +85,9 @@ export interface TypeInfo<T = AnalyzedType> {
 
   // node type if this is a connection edge type
   nodeType?: GraphQLNullableType;
+
+  // fields aside from node and cursor if this is a connection edge type
+  extraEdgeFields?: FieldType[];
 }
 
 export type TableTypeInfo = TypeInfo<TableType>;
@@ -103,10 +107,23 @@ export interface EnumTypeInfo extends TypeInfo<GraphQLEnumType> {
   discriminatedObjects?: Map<string, TypeInfo<GraphQLObjectType>>;
 }
 
+export interface ConnectionFieldInfo extends TypeField {
+  edgeTypeInfo: TableTypeInfo;
+  relationDirective?: DirectiveNode;
+  nodeBackrefField?: FieldType;
+  nodeBackrefJoin?: [FieldType, FieldType][];
+  hasEdgeTable?: boolean; // for many-to-many or edge data
+}
+
+export function isConnectionFieldInfo(info: TypeField): info is ConnectionFieldInfo {
+  return 'edgeTypeInfo' in info;
+}
+
 export class Analyzer {
   private readonly config: Readonly<DirectiveConfig>;
   private readonly interfaceImplementors: InterfaceImplementorMap;
   private readonly typeInfos = new Map<AnalyzedType, TypeInfo>();
+  private readonly fieldInfos = new Map<FieldType, TypeField>();
 
   constructor(private readonly schema: GraphQLSchema, config?: Partial<DirectiveConfig>) {
     this.config = Object.freeze(Object.assign({}, defaultConfig, config));
@@ -117,6 +134,16 @@ export class Analyzer {
 
   public getConfig(): Readonly<DirectiveConfig> {
     return this.config;
+  }
+
+  public findFieldInfo(field: FieldType): TypeField | undefined {
+    const fieldInfo = this.fieldInfos.get(field);
+    if (fieldInfo && isConnectionFieldInfo(fieldInfo)) {
+      // defer connection field analysis until all other fields are analyzed,
+      // since findContainingIdentityTable requires complete referring fields
+      this.analyzeConnectionField(fieldInfo);
+    }
+    return fieldInfo;
   }
 
   public getTypeInfos(): Iterable<TypeInfo> {
@@ -150,7 +177,9 @@ export class Analyzer {
     return typeInfo;
   }
 
-  public getIdentityTypeInfo(type: TableType): TableTypeInfo {
+  private getIdentityTypeInfo(type: TableType): TableTypeInfo;
+  private getIdentityTypeInfo(type: GraphQLCompositeType): TypeInfo<GraphQLCompositeType>;
+  private getIdentityTypeInfo(type: TableType): TableTypeInfo {
     let typeInfo = this.getTypeInfo(type);
     if (typeInfo.identityTypeInfo) {
       typeInfo = typeInfo.identityTypeInfo;
@@ -357,6 +386,8 @@ export class Analyzer {
   }
 
   private analyzeField(typeInfo: TableTypeInfo, field: FieldType, fieldType: GraphQLOutputType): void {
+    if (hasDirective(field, this.config.derivedDirective)) return;
+
     const { type } = typeInfo;
     const nullableFieldType = getNullableType(fieldType);
 
@@ -390,18 +421,20 @@ export class Analyzer {
       typeInfo.hasData = true; // a value
     } else if (isObjectType(nullableFieldType)) {
       if (this.isConnectionType(nullableFieldType)) {
-        this.analyzeConnectionType(nullableFieldType).referringFields.push({
+        this.analyzeConnection(type, field, nullableFieldType).referringFields.push({
           type,
           field
         });
-      } else if (!hasDirective(type, this.config.sqlTypeDirective)) {
+      } else if (this.isEdgeType(nullableFieldType)) {
+        // analyzed as part of associated connection
+      } else if (hasDirective(type, this.config.sqlTypeDirective)) {
+        typeInfo.hasData = true; // a value
+      } else {
         const fieldTypeInfo = this.analyzeFields(nullableFieldType);
         fieldTypeInfo.referringFields.push({ type, field });
         if (fieldTypeInfo.hasIdentity) {
           typeInfo.hasData = true; // an ID
         }
-      } else {
-        typeInfo.hasData = true; // a value
       }
     } else if (isInterfaceType(nullableFieldType)) {
       if (hasDirective(nullableFieldType, this.config.sqlTableDirective)) {
@@ -455,7 +488,7 @@ export class Analyzer {
     return typeInfo;
   }
 
-  private analyzeConnectionType(connectionType: GraphQLObjectType): TypeInfo {
+  private analyzeConnection(type: TableType, field: FieldType, connectionType: GraphQLObjectType): TypeInfo {
     const edgeType = this.getEdgeTypeForConnection(connectionType);
     const edgeTypeInfo = this.getTypeInfo(edgeType);
     if (!edgeTypeInfo.analyzed) {
@@ -483,124 +516,148 @@ export class Analyzer {
       }
 
       // analyze edge fields except 'cursor' and 'node'
-      for (const field of Object.values(rest)) {
-        this.analyzeField(edgeTypeInfo, field, field.type);
+      const extraEdgeFields = Object.values(rest);
+      if (extraEdgeFields.length > 0) {
+        edgeTypeInfo.extraEdgeFields = extraEdgeFields;
+        for (const field of extraEdgeFields) {
+          this.analyzeField(edgeTypeInfo, field, field.type);
+        }
       }
     }
+
+    const fieldInfo: ConnectionFieldInfo = { type, field, edgeTypeInfo };
+    this.fieldInfos.set(field, fieldInfo);
+
     return edgeTypeInfo;
   }
 
-  public getRelationDirective(field: FieldType): DirectiveNode | null {
+  private analyzeConnectionField(fieldInfo: ConnectionFieldInfo): void {
+    const { type, field, edgeTypeInfo } = fieldInfo;
     const otmDir = findFirstDirective(field, this.config.oneToManyDirective);
     const nmtmDir = findFirstDirective(field, this.config.newManyToManyDirective);
     const umtmDir = findFirstDirective(field, this.config.useManyToManyDirective);
     const dirCount = (otmDir ? 1 : 0) + (nmtmDir ? 1 : 0) + (umtmDir ? 1 : 0);
     if (dirCount > 1) {
-      throw new Error(`At most one relation directive allowed on Connection field "${field.name}"`);
+      throw new Error(`At most one relation directive allowed on Connection field "${type.name}.${field.name}"`);
     }
-    return otmDir || nmtmDir || umtmDir || null;
+    fieldInfo.relationDirective = otmDir || nmtmDir || umtmDir;
+
+    const { nodeType } = edgeTypeInfo;
+    if (otmDir) {
+      if (!isTableType(nodeType)) {
+        throw new Error(`@${this.config.oneToManyDirective} requires object or interface node type`);
+      }
+      if (edgeTypeInfo.extraEdgeFields) {
+        throw new Error(
+          `@${this.config.oneToManyDirective} cannot be used with edge fields aside from "node" and "cursor"`
+        );
+      }
+      fieldInfo.nodeBackrefField = this.lookupNodeBackrefField(type, field, nodeType, otmDir);
+      fieldInfo.nodeBackrefJoin = this.lookupNodeBackrefJoin(type, field, nodeType, otmDir);
+      if (fieldInfo.nodeBackrefField && fieldInfo.nodeBackrefJoin) {
+        throw new Error(`Cannot specify both backrefField and backrefJoin on field "${type.name}.${field.name}"`);
+      }
+      if (!fieldInfo.nodeBackrefField && !fieldInfo.nodeBackrefJoin) {
+        fieldInfo.nodeBackrefField = this.findNodeBackrefField(type, nodeType);
+      }
+    } else if (!nmtmDir && !umtmDir && isTableType(nodeType) && !edgeTypeInfo.extraEdgeFields) {
+      fieldInfo.nodeBackrefField = this.findNodeBackrefField(type, nodeType);
+    }
+    fieldInfo.hasEdgeTable = !fieldInfo.nodeBackrefField && !fieldInfo.nodeBackrefJoin;
   }
 
-  public findNodeBackrefField(nodeType: GraphQLOutputType, refType: TableType, refField: FieldType): FieldType | null {
-    let backrefField: FieldType | null = null;
-    let backrefFieldCount = 0;
-    nodeType = getNullableType(nodeType);
-    if (isTableType(nodeType)) {
-      // is there a valid @oneToMany(backrefField) directive?
-      const otmDir = findFirstDirective(refField, this.config.oneToManyDirective);
-      if (otmDir != null) {
-        const fieldArg = getDirectiveArgument(otmDir, 'backrefField');
-        if (fieldArg != null) {
-          const fieldName = (fieldArg.value as StringValueNode).value;
-          const field = nodeType.getFields()[fieldName];
-          if (field == null) {
-            throw new Error(
-              `One-to-many back-reference field "${fieldName}" not found in node type "${nodeType.name}" for "${refType.name}.${refField.name}"`
-            );
-          }
-          if (!this.isIdentifiedBy(field.type, refType)) {
-            throw new Error(
-              `Referring type "${refType.name}" is not assignable to one-to-many back-reference field "${nodeType.name}.${fieldName}"`
-            );
-          }
-          if (field.args.some(arg => isNonNullType(arg.type))) {
-            throw new Error(`One-to-many back-reference field "${fieldName}" cannot have non-null arguments`);
-          }
-          return field;
-        }
-      }
-
-      // is there exactly one way to refer back to the referring type from the fields of the node type?
-      // if so, we'll assume that is how the one-to-many relation is defined
-      for (const field of Object.values(nodeType.getFields())) {
-        if (this.isIdentifiedBy(field.type, refType) && !field.args.some(arg => isNonNullType(arg.type))) {
-          backrefField = field;
-          ++backrefFieldCount;
-        }
-      }
-    }
-    return backrefFieldCount === 1 ? backrefField : null;
-  }
-
-  public getNodeBackrefJoin(
-    nodeType: GraphQLOutputType,
+  private lookupNodeBackrefField(
     refType: TableType,
-    refField: FieldType
-  ): [FieldType, FieldType][] | null {
-    nodeType = getNullableType(nodeType);
-    if (isTableType(nodeType)) {
-      const otmDir = findFirstDirective(refField, this.config.oneToManyDirective);
-      if (otmDir != null) {
-        const joinArg = getDirectiveArgument(otmDir, 'backrefJoin');
-        if (joinArg != null) {
-          const pairs: string[][] = (joinArg.value as ListValueNode).values.map(lv =>
-            (lv as ListValueNode).values.map(sv => (sv as StringValueNode).value)
-          );
-          if (pairs.length === 0) {
-            throw new Error(
-              `Non-empty field pairs expected in one-to-many back-reference join for "${refType.name}.${refField.name}"`
-            );
-          }
-          const result: [FieldType, FieldType][] = [];
-          for (let i = 0; i < pairs.length; ++i) {
-            const pair = pairs[i];
-            if (pair.length < 1 || pair.length > 2) {
-              throw new Error(
-                `1 or 2 field names expected at position ${i + 1} in one-to-many back-reference join for "${
-                  refType.name
-                }.${refField.name}"`
-              );
-            }
-            const [nodeFieldName, refJoinFieldName = nodeFieldName] = pair;
-            const nodeField = nodeType.getFields()[nodeFieldName];
-            if (nodeField == null) {
-              throw new Error(
-                `One-to-many back-reference join field "${nodeFieldName}" not found in node type "${nodeType.name}" for "${refType.name}.${refField.name}"`
-              );
-            }
-            if (nodeField.args.some(arg => isNonNullType(arg.type))) {
-              throw new Error(
-                `One-to-many back-reference join field "${nodeFieldName}" cannot have non-null arguments`
-              );
-            }
-            const refJoinField = refType.getFields()[refJoinFieldName];
-            if (refJoinField == null) {
-              throw new Error(
-                `One-to-many back-reference join field "${refJoinFieldName}" not found in referring type "${refType.name}" for "${refField.name}"`
-              );
-            }
-            if (refJoinField.args.some(arg => isNonNullType(arg.type))) {
-              throw new Error(
-                `One-to-many back-reference join field "${refJoinFieldName}" cannot have non-null arguments`
-              );
-            }
-            result.push([nodeField, refJoinField]);
-          }
-          return result;
-        }
+    refField: FieldType,
+    nodeType: TableType,
+    otmDir: DirectiveNode
+  ): FieldType | undefined {
+    const fieldArg = getDirectiveArgument(otmDir, 'backrefField');
+    if (fieldArg != null) {
+      const fieldName = (fieldArg.value as StringValueNode).value;
+      const field = nodeType.getFields()[fieldName];
+      if (field == null) {
+        throw new Error(
+          `One-to-many back-reference field "${fieldName}" not found in node type "${nodeType.name}" for "${refType.name}.${refField.name}"`
+        );
+      }
+      if (!this.isIdentifiedBy(field.type, refType)) {
+        throw new Error(
+          `Referring type "${refType.name}" is not assignable to one-to-many back-reference field "${nodeType.name}.${fieldName}"`
+        );
+      }
+      if (field.args.some(arg => isNonNullType(arg.type))) {
+        throw new Error(`One-to-many back-reference field "${fieldName}" cannot have non-null arguments`);
+      }
+      return field;
+    }
+  }
+
+  private findNodeBackrefField(refType: TableType, nodeType: TableType): FieldType | undefined {
+    let backrefField: FieldType | undefined;
+    let backrefFieldCount = 0;
+
+    // is there exactly one way to refer back to the referring type from the fields of the node type?
+    // if so, we'll assume that is how the one-to-many relation is defined
+    for (const field of Object.values(nodeType.getFields())) {
+      if (this.isIdentifiedBy(field.type, refType) && !field.args.some(arg => isNonNullType(arg.type))) {
+        backrefField = field;
+        ++backrefFieldCount;
       }
     }
-    return null;
+
+    return backrefFieldCount === 1 ? backrefField : undefined;
+  }
+
+  private lookupNodeBackrefJoin(
+    refType: TableType,
+    refField: FieldType,
+    nodeType: TableType,
+    otmDir: DirectiveNode
+  ): [FieldType, FieldType][] | undefined {
+    const joinArg = getDirectiveArgument(otmDir, 'backrefJoin');
+    if (joinArg != null) {
+      const pairs: string[][] = (joinArg.value as ListValueNode).values.map(lv =>
+        (lv as ListValueNode).values.map(sv => (sv as StringValueNode).value)
+      );
+      if (pairs.length === 0) {
+        throw new Error(
+          `Non-empty field pairs expected in one-to-many back-reference join for "${refType.name}.${refField.name}"`
+        );
+      }
+      const result: [FieldType, FieldType][] = [];
+      for (let i = 0; i < pairs.length; ++i) {
+        const pair = pairs[i];
+        if (pair.length < 1 || pair.length > 2) {
+          throw new Error(
+            `1 or 2 field names expected at position ${i + 1} in one-to-many back-reference join for "${refType.name}.${
+              refField.name
+            }"`
+          );
+        }
+        const [nodeFieldName, refJoinFieldName = nodeFieldName] = pair;
+        const nodeField = nodeType.getFields()[nodeFieldName];
+        if (nodeField == null) {
+          throw new Error(
+            `One-to-many back-reference join field "${nodeFieldName}" not found in node type "${nodeType.name}" for "${refType.name}.${refField.name}"`
+          );
+        }
+        if (nodeField.args.some(arg => isNonNullType(arg.type))) {
+          throw new Error(`One-to-many back-reference join field "${nodeFieldName}" cannot have non-null arguments`);
+        }
+        const refJoinField = refType.getFields()[refJoinFieldName];
+        if (refJoinField == null) {
+          throw new Error(
+            `One-to-many back-reference join field "${refJoinFieldName}" not found in referring type "${refType.name}" for "${refField.name}"`
+          );
+        }
+        if (refJoinField.args.some(arg => isNonNullType(arg.type))) {
+          throw new Error(`One-to-many back-reference join field "${refJoinFieldName}" cannot have non-null arguments`);
+        }
+        result.push([nodeField, refJoinField]);
+      }
+      return result;
+    }
   }
 
   private isIdentifiedBy(targetType: GraphQLOutputType, sourceType: TableType): boolean {
@@ -609,11 +666,13 @@ export class Analyzer {
       return true;
     }
     // IT <~ IT2 where IT2 has no identity and IT3 contains sole reference(s) to IT2 and id(IT) <~ id(IT3)
-    if (isTableType(targetType)) {
-      const containingType = this.findContainingIdentityTable(sourceType);
-      if (containingType != null) {
-        const identityType = this.getIdentityTypeInfo(targetType).type;
-        return this.isIdentifiedBy(identityType, containingType);
+    if (isCompositeType(targetType)) {
+      const identityType = this.getIdentityTypeInfo(targetType).type;
+      if (isTableType(identityType)) {
+        const containingType = this.findContainingIdentityTable(sourceType);
+        if (containingType != null) {
+          return this.isIdentifiedBy(identityType, containingType);
+        }
       }
     }
     return false;
