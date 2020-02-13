@@ -153,9 +153,9 @@ export class SqlSchemaBuilder {
           // add an auto-increment column as the internal ID
           const idColumn = {
             name: this.config.internalIdName,
-            type: this.config.internalIdSqlType,
+            type: this.config.internalIdSqlType ?? this.config.autoIncrementType,
             notNull: true,
-            autoIncrement: this.config.internalIdAutoIncrement
+            autoIncrement: true
           };
           table.columns.push(idColumn);
           table.primaryKey.parts.push({ column: idColumn, descending: false });
@@ -240,6 +240,7 @@ export class SqlSchemaBuilder {
     let { name, explicitName } = getColumnNameInfo(field, this.config);
 
     const { table } = mapping;
+    const autoIncrement = hasDirective(field, this.config.autoincDirective);
     let sqlType;
     let charset;
     let collate;
@@ -284,13 +285,16 @@ export class SqlSchemaBuilder {
             charset = this.config.stringIdCharset;
             collate = this.config.stringIdCollate;
             uniqueKey = true;
+          } else if (autoIncrement) {
+            sqlType = this.config.autoIncrementType;
           } else if (this.config.idSqlType != null) {
             sqlType = this.config.idSqlType;
             charset = this.config.idCharset;
             collate = this.config.idCollate;
-            uniqueKey = true;
           } else {
-            throw new Error(`@sqlType, @sid, or @rid directive required for ID type${formatLocationOf(field.astNode)}`);
+            throw new Error(
+              `@sqlType, @autoinc, @sid, or @rid directive required for ID type${formatLocationOf(field.astNode)}`
+            );
           }
           break;
         case 'String':
@@ -308,7 +312,7 @@ export class SqlSchemaBuilder {
           sqlType = 'double';
           break;
         case 'Int':
-          sqlType = 'int(11)';
+          sqlType = autoIncrement ? this.config.autoIncrementType : 'int(11)';
           break;
         case 'Boolean':
           sqlType = this.config.booleanSqlType;
@@ -449,7 +453,8 @@ export class SqlSchemaBuilder {
       charset,
       collate,
       srid,
-      notNull
+      notNull,
+      autoIncrement
     };
     if (hasDirective(field, this.config.createdAtDirective)) {
       column.default = 'CURRENT_TIMESTAMP';

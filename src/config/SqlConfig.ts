@@ -4,23 +4,30 @@ import { SqlTableOptions } from '../model/SqlTable';
 
 export interface SqlConfig extends DirectiveConfig, PathConfig {
   booleanSqlType: string;
-  idSqlType?: string;
-  idCharset?: string;
-  idCollate?: string;
 
-  internalIdName: string;
-  internalIdSuffix: string;
-  internalIdSqlType: string;
-  internalIdAutoIncrement: true;
+  // column configuration for @autoinc ID fields
+  autoIncrementType: string;
 
+  // column configuration for @rid ID fields
   randomIdName: string;
   randomIdSqlType: string;
   randomIdCharset?: string;
   randomIdCollate?: string;
 
+  // column configuration for @sid ID fields
   stringIdName: string;
   stringIdCharset?: string;
   stringIdCollate?: string;
+
+  // column type for ID fields without @rid, @sid, or @autoinc
+  idSqlType?: string; // default is requiring @sqlType
+  idCharset?: string;
+  idCollate?: string;
+
+  // column configuration for hidden auto-increment ID of types with @rid or @sid
+  internalIdName: string;
+  internalIdSuffix: string;
+  internalIdSqlType?: string; // default is autoIncrementType
 
   tableIdSuffix: string;
   tableIdSqlType: string;
@@ -33,14 +40,8 @@ export const defaultConfig: SqlConfig = {
   ...defaultPathConfig,
 
   booleanSqlType: 'tinyint(1)',
-  idSqlType: undefined,
-  idCharset: undefined,
-  idCollate: undefined,
 
-  internalIdName: 'id',
-  internalIdSuffix: '_id',
-  internalIdSqlType: 'int(10) unsigned',
-  internalIdAutoIncrement: true,
+  autoIncrementType: 'int(10) unsigned',
 
   randomIdName: 'rid',
   randomIdSqlType: 'varchar(21)',
@@ -50,6 +51,14 @@ export const defaultConfig: SqlConfig = {
   stringIdName: 'sid',
   stringIdCharset: 'utf8mb4',
   stringIdCollate: 'utf8mb4_bin',
+
+  idSqlType: undefined,
+  idCharset: undefined,
+  idCollate: undefined,
+
+  internalIdName: 'id',
+  internalIdSuffix: '_id',
+  internalIdSqlType: undefined,
 
   tableIdSuffix: '_kind',
   tableIdSqlType: 'char(1)',

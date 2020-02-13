@@ -1,10 +1,35 @@
 """
-Indicates fields that define the type's (internal) identity (and its table's primary key).
+Indicates fields that define the type's identity (and its table's primary key).
 If no fields have @id, but there is a @rid or @sid field, the table is given a (hidden)
 auto-increment ID that is used as its primary key. Therefore, @id is typically only used
 for join tables. Implicitly immutable.
 """
 directive @id on FIELD_DEFINITION
+
+"""
+Indicates that a field has an auto-incremented numeric value.
+The field must have a type of ID! (recommended) or Int!.
+For database compatibility, a type can have at most one @autoinc field.
+@autoinc is generally used with @id.
+Implicitly read-only.
+"""
+directive @autoinc on FIELD_DEFINITION
+
+"""
+Indicates that an input field is a reference to an @id field of an object of the given type.
+"""
+directive @idRef(
+  """
+  The type of object to which this input field refers.
+  It must be an object or interface containing an @id field or a union of objects that do.
+  """
+  type: String!
+  """
+  The specific @id field to which this input field refers.
+  Only required if the target object has more than one @id field.
+  """
+  field: String
+) on INPUT_FIELD_DEFINITION
 
 """
 Indicates a field containing a type's randomly-generated external identity string.
@@ -17,12 +42,11 @@ Implicitly read-only.
 directive @rid on FIELD_DEFINITION
 
 """
-Indicates that an input field's type is a randomly-generated external identity string
-referring to an object of the given type.
+Indicates that an input field is a reference to a @rid field of an object of the given type.
 """
 directive @ridRef(
   """
-  The type of object to which the ID field refers.
+  The type of object to which this input field refers.
   It must be an object or interface containing a @rid field or a union of objects that do.
   """
   type: String!
@@ -39,14 +63,13 @@ directive @sid(
 ) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
 
 """
-Indicates that an input field's type is an explicitly-specified external identity string
-referring to an object of the given type.
+Indicates that an input field is a reference to a @sid field of an object of the given type.
 """
 directive @sidRef(
   """The maximum length of the ID."""
   maxLength: Int!
   """
-  The type of object to which the ID field refers.
+  The type of object to which this input field refers.
   It must be an object or interface containing a @sid field or a union of objects that do.
   """
   type: String!

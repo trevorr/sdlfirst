@@ -59,6 +59,9 @@ export interface TypeInfo<T = AnalyzedType> {
   // fields with @id directive, if any
   internalIdFields?: FieldType[];
 
+  // field with @autoinc directive, if any
+  autoincField?: FieldType;
+
   // field with @sid or @rid directive, if any
   externalIdField?: FieldType;
 
@@ -274,8 +277,12 @@ export class Analyzer {
     const typeInfo = this.getTypeInfo(type);
     for (const field of Object.values(type.getFields())) {
       let foundId = false;
-      const idDir = findFirstDirective(field, config.internalIdDirective);
-      if (idDir) {
+
+      const hasId = hasDirective(field, config.idDirective);
+      if (hasId) {
+        if (isListType(getNullableType(field.type))) {
+          throw new Error(`Non-list type expected for ID field ${type.name}.${field.name}`);
+        }
         if (typeInfo.internalIdFields != null) {
           typeInfo.internalIdFields.push(field);
         } else {
@@ -283,28 +290,50 @@ export class Analyzer {
         }
         foundId = true;
       }
+
+      const hasAutoinc = hasDirective(field, config.autoincDirective);
       const ridDir = findFirstDirective(field, config.randomIdDirective);
       const sidDir = findFirstDirective(field, config.stringIdDirective);
-      if (ridDir || sidDir) {
-        if (ridDir && sidDir) {
-          throw new Error(
-            `Cannot specify both @${config.randomIdDirective} and ` +
-              `@${config.stringIdDirective} on ${type.name}.${field.name}`
-          );
+      const dirCount = (hasAutoinc ? 1 : 0) + (ridDir ? 1 : 0) + (sidDir ? 1 : 0);
+      if (dirCount > 1) {
+        throw new Error(
+          `Only one of @${config.autoincDirective}, @${config.randomIdDirective}, ` +
+            `or @${config.stringIdDirective} allowed on ${type.name}.${field.name}`
+        );
+      }
+
+      if (hasAutoinc) {
+        const fieldType = getNullableType(field.type);
+        if (
+          !isNonNullType(field.type) ||
+          !isScalarType(fieldType) ||
+          (fieldType.name !== 'ID' && fieldType.name !== 'Int')
+        ) {
+          throw new Error(`Auto-increment field ${type.name}.${field.name} must have type ID! or Int!`);
         }
+        if (typeInfo.autoincField != null) {
+          throw new Error(`Only one @${config.autoincDirective} field allowed in type ${type.name}`);
+        }
+        typeInfo.autoincField = field;
+      }
+
+      if (ridDir || sidDir) {
         if (!isScalarType(getNullableType(field.type))) {
-          throw new Error(`Scalar type expected for external ID field: ${type.name}.${field.name}`);
+          throw new Error(`Scalar type expected for external ID field ${type.name}.${field.name}`);
         }
         if (typeInfo.externalIdField != null) {
-          throw new Error(`Duplicate external ID field: ${type.name}.${field.name}`);
+          throw new Error(
+            `Only one @${config.randomIdDirective} or @${config.stringIdDirective} field allowed in type ${type.name}`
+          );
         }
         typeInfo.externalIdField = field;
         typeInfo.externalIdDirective = ridDir || sidDir;
         foundId = true;
       }
+
       if (foundId) {
         if (!isNonNullType(field.type)) {
-          throw new Error(`ID field must be non-null: ${type.name}.${field.name}`);
+          throw new Error(`ID field ${type.name}.${field.name} must be non-null`);
         }
         typeInfo.hasIdentity = true;
       }

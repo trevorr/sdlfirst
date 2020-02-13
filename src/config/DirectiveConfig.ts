@@ -1,4 +1,5 @@
 export interface DirectiveConfig {
+  autoincDirective: string;
   createdAtDirective: string;
   createDirective: string;
   createNestedDirective: string;
@@ -7,8 +8,9 @@ export interface DirectiveConfig {
   derivedDirective: string;
   floatRangeDirective: string;
   generatedDefaultDirective: string;
+  idDirective: string;
+  idRefDirective: string;
   immutableDirective: string;
-  internalIdDirective: string;
   intRangeDirective: string;
   lengthDirective: string;
   newManyToManyDirective: string;
@@ -33,6 +35,7 @@ export interface DirectiveConfig {
 }
 
 export const defaultConfig: DirectiveConfig = {
+  autoincDirective: 'autoinc',
   createdAtDirective: 'createdAt',
   createDirective: 'create',
   createNestedDirective: 'createNested',
@@ -41,8 +44,9 @@ export const defaultConfig: DirectiveConfig = {
   derivedDirective: 'derived',
   floatRangeDirective: 'floatRange',
   generatedDefaultDirective: 'generatedDefault',
+  idDirective: 'id',
+  idRefDirective: 'id',
   immutableDirective: 'immutable',
-  internalIdDirective: 'id',
   intRangeDirective: 'intRange',
   lengthDirective: 'length',
   newManyToManyDirective: 'newManyToMany',
