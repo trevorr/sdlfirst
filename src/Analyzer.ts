@@ -1,5 +1,4 @@
 import {
-  BooleanValueNode,
   DirectiveNode,
   getNullableType,
   GraphQLCompositeType,
@@ -22,7 +21,6 @@ import {
   isScalarType,
   isUnionType,
   ListValueNode,
-  ObjectValueNode,
   StringValueNode
 } from 'graphql';
 import { pascalCase } from 'pascal-case';
@@ -53,7 +51,7 @@ export interface TypeInfo<T = AnalyzedType> {
   // true iff has data or reference fields or some union member does
   hasData: boolean;
 
-  // true iff has internal or external ID fields or a unique key or all union members have common interface that does
+  // true iff has internal or external ID fields or all union members have common interface that does
   hasIdentity: boolean;
 
   // fields with @id directive, if any
@@ -336,18 +334,6 @@ export class Analyzer {
           throw new Error(`ID field ${type.name}.${field.name} must be non-null`);
         }
         typeInfo.hasIdentity = true;
-      }
-    }
-    // also consider a unique key as an identity
-    if (!typeInfo.hasIdentity) {
-      const tableDir = findFirstDirective(type, config.sqlTableDirective);
-      if (tableDir != null) {
-        const keysArg = getDirectiveArgument(tableDir, 'keys');
-        if (keysArg != null) {
-          typeInfo.hasIdentity = (keysArg.value as ListValueNode).values.some(v =>
-            (v as ObjectValueNode).fields.some(f => f.name.value === 'unique' && (f.value as BooleanValueNode).value)
-          );
-        }
       }
     }
     return typeInfo;

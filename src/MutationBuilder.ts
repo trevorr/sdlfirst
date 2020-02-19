@@ -299,7 +299,7 @@ export class MutationBuilder {
         const typeInfo = this.analyzer.getTypeInfo(fieldType);
         if (typeInfo.hasIdentity || !isObjectType(fieldType)) {
           try {
-            return this.getIdRefFields(fieldType, name);
+            return this.getIdRefFields(fieldType, nonNull, name);
           } catch (e) {
             throw new Error(`${e.message} for field "${parentType.name}.${field.name}"`);
           }
@@ -347,7 +347,7 @@ export class MutationBuilder {
     if (!fields.length) return null;
 
     if (!nested) {
-      fields.unshift(...this.getIdRefFields(type));
+      fields.unshift(...this.getIdRefFields(type, true));
       fields.unshift(makeInputFieldConfigEntry(CLIENT_MUTATION_ID, GraphQLString));
     }
 
@@ -406,7 +406,7 @@ export class MutationBuilder {
         const typeInfo = this.analyzer.getTypeInfo(fieldType);
         if (typeInfo.hasIdentity || !isObjectType(fieldType)) {
           try {
-            return this.getIdRefFields(fieldType, name);
+            return this.getIdRefFields(fieldType, false, name);
           } catch (e) {
             throw new Error(`${e.message} for field "${parentType.name}.${field.name}"`);
           }
@@ -425,7 +425,11 @@ export class MutationBuilder {
     return [makeInputFieldConfigEntry(name, inputType)];
   }
 
-  private getIdRefFields(type: GraphQLCompositeType, namePrefix?: string): [string, GraphQLInputFieldConfig][] {
+  private getIdRefFields(
+    type: GraphQLCompositeType,
+    nonNull: boolean,
+    namePrefix?: string
+  ): [string, GraphQLInputFieldConfig][] {
     const typeInfo = this.analyzer.getTypeInfo(type);
     const { externalIdField } = typeInfo;
     if (externalIdField) {
@@ -433,8 +437,12 @@ export class MutationBuilder {
       if (namePrefix && !name.startsWith(namePrefix)) {
         name = namePrefix + ucFirst(name);
       }
+      let fieldType: GraphQLInputType = assertScalarType(getNullableType(externalIdField.type));
+      if (nonNull) {
+        fieldType = new GraphQLNonNull(fieldType);
+      }
       return [
-        makeInputFieldConfigEntry(name, new GraphQLNonNull(assertScalarType(getNullableType(externalIdField.type))), [
+        makeInputFieldConfigEntry(name, fieldType, [
           this.getExternalIdRefDirective(typeInfo.externalIdDirective!, type.name)!
         ])
       ];
@@ -442,7 +450,7 @@ export class MutationBuilder {
 
     const { internalIdFields } = typeInfo;
     if (internalIdFields) {
-      return internalIdFields.flatMap(field => this.getIdRefFieldsFor(field, type, namePrefix));
+      return internalIdFields.flatMap(field => this.getIdRefFieldsFor(field, type, nonNull, namePrefix));
     }
 
     // see if all object types of an interface or union have a common external ID type
@@ -453,7 +461,7 @@ export class MutationBuilder {
         if (dir) {
           const name = namePrefix ? namePrefix + 'Id' : 'id';
           return [
-            makeInputFieldConfigEntry(name, this.getExternalIdType(objectTypes), [
+            makeInputFieldConfigEntry(name, new GraphQLNonNull(this.getExternalIdType(objectTypes)), [
               this.getExternalIdRefDirective(dir, type.name)
             ])
           ];
@@ -469,18 +477,22 @@ export class MutationBuilder {
   private getIdRefFieldsFor(
     field: FieldType,
     type: GraphQLCompositeType,
+    nonNull: boolean,
     namePrefix?: string
   ): [string, GraphQLInputFieldConfig][] {
     let name = field.name;
     if (namePrefix && !name.startsWith(namePrefix)) {
       name = namePrefix + ucFirst(name);
     }
-    const fieldType = getNullableType(field.type);
+    let fieldType = getNullableType(field.type);
     if (isScalarType(fieldType) || isEnumType(fieldType)) {
+      if (nonNull) {
+        fieldType = new GraphQLNonNull(fieldType);
+      }
       return [makeInputFieldConfigEntry(name, fieldType, [this.getIdRefDirective(type.name, field.name)])];
     }
     if (isCompositeType(fieldType)) {
-      return this.getIdRefFields(fieldType, name);
+      return this.getIdRefFields(fieldType, nonNull, name);
     }
     throw new Error(`Unexpected type for ID field ${type.name}.${field.name}`);
   }
@@ -573,7 +585,7 @@ export class MutationBuilder {
 
     const fields: [string, GraphQLInputFieldConfig][] = [
       makeInputFieldConfigEntry(CLIENT_MUTATION_ID, GraphQLString),
-      ...this.getIdRefFields(type)
+      ...this.getIdRefFields(type, true)
     ];
     const description = `Automatically generated input type for ${this.mutationTypeName}.delete${type.name}`;
     return new GraphQLInputObjectType({

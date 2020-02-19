@@ -11,6 +11,7 @@ import {
   GraphQLOutputType,
   GraphQLSchema,
   IntValueNode,
+  isCompositeType,
   isEnumType,
   isInputObjectType,
   isInterfaceType,
@@ -19,16 +20,16 @@ import {
   isObjectType,
   isScalarType,
   isUnionType,
-  StringValueNode,
-  isCompositeType
+  StringValueNode
 } from 'graphql';
 import { pascalCase } from 'pascal-case';
 import path from 'path';
 import ts from 'typescript';
 import { Analyzer, FieldType, isTableType, TableType, TableTypeInfo, TypeInfo } from './Analyzer';
 import { defaultConfig as defaultPathConfig, defaultConfig as defaultSqlConfig, SqlConfig } from './config/SqlConfig';
+import { SqlColumn } from './model/SqlColumn';
 import { CLIENT_MUTATION_ID, DELETED_FLAG } from './MutationBuilder';
-import { isColumns, SqlSchemaMappings, TypeTable, FieldColumns } from './SqlSchemaBuilder';
+import { FieldColumns, isColumns, SqlSchemaMappings, TypeTable } from './SqlSchemaBuilder';
 import {
   findFirstDirective,
   getDirectiveArgument,
@@ -39,9 +40,9 @@ import {
 import { lcFirst, ucFirst } from './util/case';
 import { compare } from './util/compare';
 import { mkdir } from './util/fs-util';
+import { QueryExpressionBuilder, RootQueryExpressionBuilder } from './util/QueryExpressionBuilder';
 import { defaultConfig as defaultFormatterConfig, TsFormatter, TsFormatterConfig } from './util/TsFormatter';
 import { TsBlock, TsModule } from './util/TsModule';
-import { SqlColumn } from './model/SqlColumn';
 
 const GraphQLJSModule = 'graphql';
 const InfoType = 'GraphQLResolveInfo';
@@ -60,6 +61,8 @@ export interface SqlResolverConfig extends SqlConfig, TsFormatterConfig {
   tsfvModule: string;
   id62Binding: string;
   id62Module: string;
+  qualifiedIdName: string;
+  discriminatorSuffix: string;
   schemaTypesNamespace: string;
   schemaTypesModule: string;
   parentArgName: string;
@@ -88,6 +91,8 @@ export const defaultConfig: SqlResolverConfig = {
   tsfvModule: 'tsfv',
   id62Binding: 'id62',
   id62Module: 'id62',
+  qualifiedIdName: 'qid',
+  discriminatorSuffix: 'Kind',
   schemaTypesNamespace: 'schema',
   schemaTypesModule: path.relative(defaultPathConfig.resolversDir, defaultPathConfig.sdlTypesDir),
   parentArgName: 'parent',
@@ -464,40 +469,29 @@ export class SqlResolverWriter {
       throw new Error(`No table mapping for type "${targetTypeInfo.type.name}"`);
     }
 
-    // const { clientMutationId, id: rid } = args.input
+    // const { clientMutationId, id: qid } = args.input
     this.destructureInput(block, resolverNodes.argsId, inputType);
 
     const trxId = block.module.createIdentifier('trx');
     const trxBlock = block.newBlock();
     const trxNodes = { ...resolverNodes, trxId };
 
-    // const id = await context.forXid(?, dbmeta.?, trx).configure(...).lookupId()
-    const { idExprs, softDeleteColumn, softDeleteWhereWrapper, softDeleteValueExpr } = this.buildIdLookups(
-      trxBlock,
-      trxNodes,
-      inputType,
+    // const { a_id, b_id, ... } = await context.queryOptionalRow(...);
+    const { idExprs, softDeleteColumn, softDeleteValueExpr } = this.idLookup(
       targetTypeInfo,
       identityTypeInfo,
       identityTableMapping,
-      false
+      inputType,
+      trxBlock,
+      trxNodes,
+      true
     );
 
-    // if (id == null || ...) return false
-    trxBlock.addStatement(
-      ts.createIf(
-        idExprs.reduce(
-          (expr, idExpr) => ts.createBinary(expr, ts.SyntaxKind.BarBarToken, this.eqEqNull(idExpr)),
-          this.eqEqNull(idExprs[0])
-        ),
-        ts.createReturn(ts.createFalse())
-      )
-    );
+    // if (a_id == null) return false
+    trxBlock.addStatement(ts.createIf(this.eqEqNull(idExprs[0]), ts.createReturn(ts.createFalse())));
 
     // delete identity row
     let deleteExpr = this.getWhereExpression(identityTableMapping, trxId, idExprs);
-    if (softDeleteWhereWrapper) {
-      deleteExpr = softDeleteWhereWrapper(deleteExpr);
-    }
     if (softDeleteColumn && softDeleteValueExpr) {
       deleteExpr = ts.createCall(ts.createPropertyAccess(deleteExpr, 'update'), undefined, [
         ts.createObjectLiteral([ts.createPropertyAssignment(softDeleteColumn, softDeleteValueExpr)])
@@ -506,22 +500,12 @@ export class SqlResolverWriter {
       deleteExpr = ts.createCall(ts.createPropertyAccess(deleteExpr, 'del'), undefined, undefined);
     }
     deleteExpr = this.getExecuteExpression(resolverNodes.contextId, deleteExpr);
-    let resultExpr;
-    if (softDeleteWhereWrapper) {
-      resultExpr = trxBlock.declareConst(
-        'deleted',
-        undefined,
-        ts.createBinary(deleteExpr, ts.SyntaxKind.GreaterThanToken, ts.createNumericLiteral('0'))
-      );
-    } else {
-      trxBlock.addStatement(ts.createExpressionStatement(deleteExpr));
-      resultExpr = ts.createTrue();
-    }
+    trxBlock.addStatement(ts.createExpressionStatement(deleteExpr));
 
     // TODO: cascade delete
 
     // return true
-    trxBlock.addStatement(ts.createReturn(resultExpr));
+    trxBlock.addStatement(ts.createReturn(ts.createTrue()));
 
     // const deleted = await context.knex.transaction(async trx => { <trxBlock> })
     const deletedId = block.declareConst(
@@ -565,11 +549,10 @@ export class SqlResolverWriter {
       ts.createObjectBindingPattern(
         Object.values(inputType.getFields()).map(field => {
           let idSuffix;
-          // TODO: Qid suffix
           if (hasDirectives(field, [this.config.stringIdDirective, this.config.stringIdRefDirective])) {
             idSuffix = this.config.stringIdName;
           } else if (hasDirective(field, this.config.randomIdRefDirective)) {
-            idSuffix = this.config.randomIdName;
+            idSuffix = this.config.qualifiedIdName;
           }
           if (idSuffix) {
             let binding;
@@ -628,7 +611,7 @@ export class SqlResolverWriter {
   ): ts.Expression[] {
     for (const field of Object.values(inputType.getFields())) {
       const targetField = this.findTargetField(field, targetType);
-      if (field.name === CLIENT_MUTATION_ID || (targetField && this.getExternalId(targetField))) continue;
+      if (field.name === CLIENT_MUTATION_ID || (targetField && this.hasIdDirective(targetField))) continue;
       const fieldType = getNullableType(field.type);
       const fieldRef = getFieldRef(field);
       if (isInputObjectType(fieldType) && targetField) {
@@ -654,11 +637,12 @@ export class SqlResolverWriter {
     return output;
   }
 
-  private getExternalId(field: GraphQLInputField | FieldType): DirectiveNode | undefined {
-    return (
-      findFirstDirective(field, this.config.randomIdDirective) ||
-      findFirstDirective(field, this.config.stringIdDirective)
-    );
+  private hasIdDirective(field: GraphQLInputField | FieldType): boolean {
+    return hasDirectives(field, [
+      this.config.idDirective,
+      this.config.randomIdDirective,
+      this.config.stringIdDirective
+    ]);
   }
 
   private validateInput(
@@ -759,193 +743,270 @@ export class SqlResolverWriter {
     }
   }
 
-  private buildIdLookups(
-    block: TsBlock,
-    resolverNodes: ResolverTransactionNodes,
-    inputType: GraphQLInputObjectType,
+  private idLookup(
     targetTypeInfo: TableTypeInfo,
     identityTypeInfo: TableTypeInfo,
     identityTableMapping: TypeTable,
-    required: boolean,
-    namePrefix?: string
-  ): {
-    idExprs: ts.Identifier[];
-    softDeleteColumn?: string;
-    softDeleteWhereWrapper?: ExprWrapper;
-    softDeleteValueExpr?: ts.Expression;
-  } {
-    const result = this.buildNestedIdLookups(
-      block,
-      resolverNodes,
-      inputType,
-      targetTypeInfo,
-      identityTypeInfo,
-      identityTableMapping,
-      required,
-      namePrefix
-    );
-    if (identityTypeInfo.softDeleteField && !result.softDeleteColumn) {
-      Object.assign(
-        result,
-        this.getSoftDeleteInfo(identityTypeInfo.softDeleteField, identityTableMapping, resolverNodes)
-      );
-    }
-    return result;
-  }
-
-  private buildNestedIdLookups(
-    block: TsBlock,
-    resolverNodes: ResolverTransactionNodes,
     inputType: GraphQLInputObjectType,
-    targetTypeInfo: TypeInfo,
-    identityTypeInfo: TableTypeInfo,
-    identityTableMapping: TypeTable,
-    required: boolean,
-    namePrefix?: string
+    block: TsBlock,
+    trxNodes: ResolverTransactionNodes,
+    optional: boolean
   ): {
     idExprs: ts.Identifier[];
     softDeleteColumn?: string;
     softDeleteValueExpr?: ts.Expression;
   } {
-    if (identityTypeInfo.externalIdField) {
-      const { idExpr, softDeleteColumn, softDeleteValueExpr } = this.buildXidLookup(
-        block,
-        resolverNodes,
-        inputType,
-        targetTypeInfo,
-        identityTypeInfo,
+    // const [aRid] = gqlsql.resolveQid(aQid, dbmeta.A);
+    // const [bRid, bMeta] = gqlsql.resolveQid(bQid, dbmeta.B);
+    // ...
+    // trx('c')
+    //   .join('a', { 'c.a_id': 'a.id' }).where('a.rid', aRid)
+    //   .join(`${bMeta.tableName} as b`, {
+    //     'c.b_kind': context.knex.raw('?', [bMeta.tableId!]),
+    //     'c.b_id': `b.${bMeta.idColumns[0]}`
+    //   }).where('b.rid', bRid)
+    const qeb = new RootQueryExpressionBuilder(
+      ts.createPropertyAccess(trxNodes.contextId, 'knex'),
+      trxNodes.trxId,
+      identityTableMapping.table.name
+    );
+    const inputIds = this.addIdLookup(identityTypeInfo, identityTableMapping, inputType, qeb, block);
+
+    // .where('a.type', enums.IntfTypeToSql.get(schema.IntfType.ObjType))
+    const { typeDiscriminatorField } = identityTypeInfo;
+    if (typeDiscriminatorField) {
+      const [column, value] = this.getTypeDiscriminatorColumnAndValue(
+        typeDiscriminatorField,
+        targetTypeInfo.type,
         identityTableMapping,
-        required,
-        namePrefix
+        block.module
       );
-      return { idExprs: [idExpr], softDeleteColumn, softDeleteValueExpr };
+      qeb.where(column, value);
     }
 
-    const idExprs: ts.Identifier[] = [];
-    for (const field of identityTypeInfo.internalIdFields!) {
-      const fieldName = addNamePrefix(namePrefix, field.name);
-      const fieldType = getNullableType(field.type);
-      if (isScalarType(fieldType) || isEnumType(fieldType)) {
-        const inputField = inputType.getFields()[fieldName];
-        const inputId = block.findIdentifierFor(inputField);
-        if (!inputId) {
-          throw new Error(`Identifier not found for field "${identityTypeInfo.type.name}.${inputField.name}"`);
-        }
-        idExprs.push(inputId);
-      } else if (isCompositeType(fieldType)) {
-        const nestedTargetTypeInfo = this.analyzer.getTypeInfo(fieldType);
-        let nestedIdentityTypeInfo: TableTypeInfo;
-        if (nestedTargetTypeInfo.identityTypeInfo) {
-          nestedIdentityTypeInfo = nestedTargetTypeInfo.identityTypeInfo;
-        } else if (isTableType(nestedTargetTypeInfo.type)) {
-          nestedIdentityTypeInfo = nestedTargetTypeInfo as TableTypeInfo;
-        } else {
-          throw new Error(`Unexpected type for ID field ${identityTypeInfo.type.name}.${field.name}`);
-        }
-        const nestedIdentityTableMapping = this.sqlMappings.getIdentityTableForType(nestedIdentityTypeInfo.type);
-        if (!nestedIdentityTableMapping) {
-          throw new Error(`No table mapping for type "${nestedIdentityTypeInfo.type.name}"`);
-        }
-
-        const { idExprs: nestedIdExprs } = this.buildNestedIdLookups(
-          block,
-          resolverNodes,
-          inputType,
-          nestedTargetTypeInfo,
-          nestedIdentityTypeInfo,
-          nestedIdentityTableMapping,
-          required,
-          fieldName
-        );
-        idExprs.push(...nestedIdExprs);
+    // .whereNull('a.delete_date')
+    let softDeleteColumn, softDeleteValueExpr;
+    const { softDeleteField } = identityTypeInfo;
+    if (softDeleteField) {
+      const fieldMapping = this.getFieldColumns(identityTableMapping, softDeleteField, 'soft-delete');
+      softDeleteColumn = fieldMapping.columns[0].name;
+      if (getNamedType(softDeleteField.type).name === 'Boolean') {
+        qeb.where(softDeleteColumn, ts.createFalse());
+        softDeleteValueExpr = ts.createTrue();
       } else {
-        throw new Error(`Unexpected type for ID field ${identityTypeInfo.type.name}.${field.name}`);
+        qeb.whereNull(softDeleteColumn);
+        // context.knex.fn.now()
+        softDeleteValueExpr = ts.createCall(
+          ts.createPropertyAccess(
+            ts.createPropertyAccess(ts.createPropertyAccess(trxNodes.contextId, 'knex'), 'fn'),
+            'now'
+          ),
+          undefined,
+          undefined
+        );
       }
     }
-    return { idExprs };
+
+    // .select('a.*')
+    qeb.select('*');
+
+    // const { a_id, b_id, ... } = await context.queryOptionalRow(...);
+    const idExprs: ts.Identifier[] = [];
+    const idBinds: ts.BindingElement[] = [];
+    const { internalIdFields } = identityTypeInfo;
+    if (internalIdFields) {
+      for (const idField of internalIdFields) {
+        const fieldMapping = this.getFieldColumns(identityTableMapping, idField, 'ID');
+        for (const column of fieldMapping.columns) {
+          const { name } = column;
+          const id = block.createIdentifier(name, column);
+          idBinds.push(ts.createBindingElement(undefined, ts.idText(id) !== name ? name : undefined, id));
+          idExprs.push(id);
+        }
+      }
+    } else {
+      const name = this.config.internalIdName;
+      const id = block.createIdentifier(name);
+      idBinds.push(ts.createBindingElement(undefined, ts.idText(id) !== name ? name : undefined, id));
+      idExprs.push(id);
+    }
+    const queryArgs = [qeb.getExpression()];
+    let queryMethod;
+    if (optional) {
+      queryMethod = 'queryOptionalRow';
+    } else {
+      queryMethod = 'queryRow';
+      queryArgs.push(
+        ts.createTemplateExpression(
+          ts.createTemplateHead(`${targetTypeInfo.type.name} with ID "`),
+          inputIds.map((inputId, index) =>
+            ts.createTemplateSpan(
+              inputId,
+              index < inputIds.length - 1 ? ts.createTemplateMiddle('", "') : ts.createTemplateTail('"')
+            )
+          )
+        )
+      );
+    }
+    const queryExpr = ts.createAwait(
+      ts.createCall(ts.createPropertyAccess(trxNodes.contextId, queryMethod), undefined, queryArgs)
+    );
+    block.declareConst(ts.createObjectBindingPattern(idBinds), undefined, queryExpr);
+
+    return { idExprs, softDeleteColumn, softDeleteValueExpr };
   }
 
-  private buildXidLookup(
-    block: TsBlock,
-    resolverNodes: ResolverTransactionNodes,
-    inputType: GraphQLInputObjectType,
-    targetTypeInfo: TypeInfo,
+  private addIdLookup(
     identityTypeInfo: TableTypeInfo,
     identityTableMapping: TypeTable,
-    required: boolean,
+    inputType: GraphQLInputObjectType,
+    qeb: QueryExpressionBuilder,
+    block: TsBlock,
     namePrefix?: string
-  ): {
-    idExpr: ts.Identifier;
-    softDeleteColumn?: string;
-    softDeleteValueExpr?: ts.Expression;
-  } {
-    // context.forXid(?, dbmeta.?, trx).configure(...)
-    const targetType = targetTypeInfo.type;
-    const idField = identityTypeInfo.externalIdField;
-    if (!idField) {
-      throw new Error(`No external ID for delete mutation of ${targetType.name}`);
+  ): ts.Identifier[] {
+    const { externalIdField, internalIdFields } = identityTypeInfo;
+    const idFields = externalIdField ? [externalIdField] : internalIdFields;
+    if (!idFields) {
+      throw new Error(`ID fields expected for type "${identityTypeInfo.type.name}"`);
     }
-    const idInputField = inputType.getFields()[addNamePrefix(namePrefix, idField.name)];
-    if (!idInputField) {
-      throw new Error(`ID field "${idField.name}" not found in type "${inputType.name}"`);
+    const inputIds: ts.Identifier[] = [];
+    for (const idField of idFields) {
+      const fieldMapping = this.getFieldColumns(identityTableMapping, idField, 'ID');
+      inputIds.push(...this.addIdLookupFor(identityTypeInfo.type, fieldMapping, inputType, qeb, block, namePrefix));
     }
-    const inputId = block.findIdentifierFor(idInputField);
-    if (!inputId) {
-      throw new Error(`Identifier not found for ID field "${inputType.name}.${idInputField.name}"`);
-    }
-    let builderExpr: ts.Expression = ts.createCall(
-      ts.createPropertyAccess(resolverNodes.contextId, 'forXid'),
-      undefined,
-      [inputId, ts.createPropertyAccess(this.getMetaImport(block.module), targetType.name), resolverNodes.trxId]
-    );
-    const { typeDiscriminatorField, softDeleteField } = identityTypeInfo;
-    let softDeleteColumn, softDeleteValueExpr;
-    if (typeDiscriminatorField || softDeleteField) {
-      const configBlock = block.newBlock();
-      const queryId = configBlock.createIdentifier('query');
-      let configExpr: ts.Expression = queryId;
-      if (typeDiscriminatorField) {
-        // query.where('?', enums.?TypeToSql.get(schema.?Type.?))
-        const cv = this.getTypeDiscriminatorColumnAndValue(
-          typeDiscriminatorField,
-          targetTypeInfo.type,
-          identityTableMapping,
-          block.module
+    return inputIds;
+  }
+
+  private addIdLookupFor(
+    parentType: TableType,
+    fieldMapping: FieldColumns,
+    inputType: GraphQLInputObjectType,
+    qeb: QueryExpressionBuilder,
+    block: TsBlock,
+    namePrefix?: string
+  ): ts.Identifier[] {
+    const { field, columns } = fieldMapping;
+    const name = namePrefix ? namePrefix + ucFirst(field.name) : field.name;
+    const type = getNullableType(field.type);
+
+    if (isScalarType(type) || isEnumType(type)) {
+      const idInputField = inputType.getFields()[name];
+      if (!idInputField) {
+        throw new Error(`ID field "${name}" not found in type "${inputType.name}"`);
+      }
+      const inputId = block.findIdentifierFor(idInputField);
+      if (!inputId) {
+        throw new Error(`Identifier not found for ID field "${inputType.name}.${name}"`);
+      }
+      if (columns.length !== 1) {
+        throw new Error(
+          `Expected 1 column mapping for ID field "${parentType.name}.${field.name}", got ${columns.length}`
         );
-        configExpr = ts.createCall(ts.createPropertyAccess(configExpr, 'where'), undefined, [
-          ts.createStringLiteral(cv[0]),
-          cv[1]
-        ]);
       }
-      if (softDeleteField) {
-        let softDeleteWhereWrapper;
-        ({ softDeleteColumn, softDeleteWhereWrapper, softDeleteValueExpr } = this.getSoftDeleteInfo(
-          softDeleteField,
-          identityTableMapping,
-          resolverNodes
-        ));
-        configExpr = softDeleteWhereWrapper(configExpr);
+      const column = columns[0].name;
+      if (hasDirective(idInputField, this.config.randomIdRefDirective)) {
+        // const [aRid] = gqlsql.resolveQid(aQid, dbmeta.A);
+        const ridId = block.createIdentifier(name + ucFirst(this.config.randomIdName));
+        const gqlsqlId = block.module.addNamespaceImport(this.config.gqlsqlModule, this.config.gqlsqlNamespace);
+        block.declareConst(
+          ts.createArrayBindingPattern([ts.createBindingElement(undefined, undefined, ridId)]),
+          undefined,
+          ts.createCall(ts.createPropertyAccess(gqlsqlId, 'resolveQid'), undefined, [
+            inputId,
+            ts.createPropertyAccess(this.getMetaImport(block.module), parentType.name)
+          ])
+        );
+        qeb.where(column, ridId);
+      } else {
+        qeb.where(column, inputId);
       }
-      builderExpr = ts.createCall(ts.createPropertyAccess(builderExpr, 'configure'), undefined, [
-        ts.createArrowFunction(
-          undefined,
-          undefined,
-          [ts.createParameter(undefined, undefined, undefined, queryId)],
-          undefined,
-          undefined,
-          configExpr
-        )
-      ]);
+      return [inputId];
     }
 
-    // await context.forXid(?, dbmeta.?, trx).configure(...).getId()
-    const lookupExpr = ts.createAwait(
-      ts.createCall(ts.createPropertyAccess(builderExpr, required ? 'getId' : 'lookupId'), undefined, undefined)
-    );
+    if (isCompositeType(type)) {
+      const typeInfo = this.analyzer.getTypeInfo(type);
+      if (typeInfo.hasIdentity) {
+        const { identityTypeInfo = typeInfo } = typeInfo;
+        const identityType = identityTypeInfo.type as TableType;
+        const identityTableMapping = this.sqlMappings.getIdentityTableForType(identityType);
+        if (identityTableMapping) {
+          const { table } = identityTableMapping;
+          const keyParts = table.primaryKey.parts;
+          if (columns.length !== keyParts.length) {
+            throw new Error(
+              `Expected ${keyParts.length} column mapping(s) for ID field "${parentType.name}.${field.name}"` +
+                `, got ${columns.length}`
+            );
+          }
+          const jb = qeb.join(table.name, name);
+          keyParts.forEach((part, index) => {
+            jb.onColumn(part.column.name, columns[index].name);
+          });
+          return this.addIdLookup(
+            identityTypeInfo as TableTypeInfo,
+            identityTableMapping,
+            inputType,
+            jb.endJoin(),
+            block,
+            name
+          );
+        }
 
-    const name = addNamePrefix(namePrefix, this.config.internalIdName);
-    const idExpr = block.declareConst(name, undefined, lookupExpr);
-    return { idExpr, softDeleteColumn, softDeleteValueExpr };
+        const { externalIdField } = identityTypeInfo;
+        if (externalIdField && typeInfo.tableIds) {
+          const idName = name + ucFirst(externalIdField.name);
+          const idInputField = inputType.getFields()[idName];
+          if (!idInputField) {
+            throw new Error(`ID field "${idName}" not found in type "${inputType.name}"`);
+          }
+          const inputId = block.findIdentifierFor(idInputField);
+          if (!inputId) {
+            throw new Error(`Identifier not found for ID field "${inputType.name}.${idName}"`);
+          }
+          if (columns.length !== 2) {
+            throw new Error(
+              `Expected 2 column mappings for discriminated ID field "${parentType.name}.${field.name}", got ${columns.length}`
+            );
+          }
+          // const [cRid, cMeta] = gqlsql.resolveQid(cQid, dbmeta.C);
+          const ridId = block.createIdentifier(name + ucFirst(this.config.randomIdName));
+          const metaId = block.createIdentifier(name + ucFirst(this.config.discriminatorSuffix));
+          const gqlsqlId = block.module.addNamespaceImport(this.config.gqlsqlModule, this.config.gqlsqlNamespace);
+          block.declareConst(
+            ts.createArrayBindingPattern([
+              ts.createBindingElement(undefined, undefined, ridId),
+              ts.createBindingElement(undefined, undefined, metaId)
+            ]),
+            undefined,
+            ts.createCall(ts.createPropertyAccess(gqlsqlId, 'resolveQid'), undefined, [
+              inputId,
+              ts.createPropertyAccess(this.getMetaImport(block.module), type.name)
+            ])
+          );
+          // .join(`${cMeta.tableName} as c`, { 'a.c_kind': context.knex.raw('?', [cMeta.tableId]), 'a.c_id': `c.${cMeta.idColumns[0]}` })
+          // .where('c.rid', cRid)
+          const [kindColumn, idColumn] = columns;
+          const jb = qeb.join(ts.createPropertyAccess(metaId, 'tableName'), name);
+          jb.onValue(ts.createNonNullExpression(ts.createPropertyAccess(metaId, 'tableId')), kindColumn.name);
+          jb.onColumn(ts.createElementAccess(ts.createPropertyAccess(metaId, 'idColumns'), 0), idColumn.name);
+          jb.endJoin().where(this.config.randomIdName, ridId);
+          return [inputId];
+        }
+      }
+    }
+
+    throw new Error(`Unsupported type "${type.toString()}" for field "${parentType.name}.${field.name}"`);
+  }
+
+  private getFieldColumns(tableMapping: TypeTable, field: FieldType, kind: string): FieldColumns {
+    const fieldMapping = tableMapping.fieldMappings.get(field);
+    if (!fieldMapping) {
+      throw new Error(`No column mapping for ${kind} field "${tableMapping.type.name}.${field.name}"`);
+    }
+    if (!isColumns(fieldMapping)) {
+      throw new Error(`Expected column mapping for ${kind} field "${tableMapping.type.name}.${field.name}"`);
+    }
+    return fieldMapping;
   }
 
   private performInsert(
@@ -979,16 +1040,13 @@ export class SqlResolverWriter {
     }
     const { typeDiscriminatorField } = identityTypeInfo;
     if (typeDiscriminatorField) {
-      insertProps.push(
-        ts.createPropertyAssignment(
-          ...this.getTypeDiscriminatorColumnAndValue(
-            typeDiscriminatorField,
-            targetTypeInfo.type,
-            identityTableMapping,
-            block.module
-          )
-        )
+      const [column, value] = this.getTypeDiscriminatorColumnAndValue(
+        typeDiscriminatorField,
+        targetTypeInfo.type,
+        identityTableMapping,
+        block.module
       );
+      insertProps.push(ts.createPropertyAssignment(column, value));
     }
     const inputMappings = this.getInputFieldMappings(inputType, identityTableMapping);
     insertProps.push(...this.getUpsertProps(trxBlock, trxNodes, inputMappings));
@@ -1064,15 +1122,15 @@ export class SqlResolverWriter {
     const trxBlock = block.newBlock();
     const trxNodes = { ...resolverNodes, trxId };
 
-    // const id = await context.forXid(?, dbmeta.?, trx).configure(...).getId()
-    const { idExprs, softDeleteWhereWrapper } = this.buildIdLookups(
-      trxBlock,
-      trxNodes,
-      inputType,
+    // const { a_id, b_id, ... } = await context.queryRow(...);
+    const { idExprs } = this.idLookup(
       targetTypeInfo,
       identityTypeInfo,
       identityTableMapping,
-      true
+      inputType,
+      trxBlock,
+      trxNodes,
+      false
     );
 
     const targetTableMapping =
@@ -1086,9 +1144,8 @@ export class SqlResolverWriter {
       undefined,
       ts.createObjectLiteral(this.getUpsertProps(trxBlock, trxNodes, nonIdInputMappings), true)
     );
-    let updateExpr = this.getUpdateExpression(identityTableMapping, trxId, idExprs, softDeleteWhereWrapper, updateId);
+    let updateExpr = this.getUpdateExpression(identityTableMapping, trxId, idExprs, updateId);
     let execStmt = ts.createExpressionStatement(this.getExecuteExpression(resolverNodes.contextId, updateExpr));
-    // TODO: ensure row exists when using softDeleteWhereWrapper
     if (targetTableMapping) {
       updateBlock.addStatement(
         ts.createIf(this.getHasValueExpression(block.module, updateId), ts.createBlock([execStmt]))
@@ -1102,7 +1159,7 @@ export class SqlResolverWriter {
         undefined,
         ts.createObjectLiteral(this.getUpsertProps(trxBlock, trxNodes, inputMappings), true)
       );
-      updateExpr = this.getUpdateExpression(targetTableMapping, trxId, idExprs, undefined, updateId);
+      updateExpr = this.getUpdateExpression(targetTableMapping, trxId, idExprs, updateId);
       execStmt = ts.createExpressionStatement(this.getExecuteExpression(resolverNodes.contextId, updateExpr));
       updateBlock.addStatement(
         ts.createIf(this.getHasValueExpression(block.module, updateId), ts.createBlock([execStmt]))
@@ -1173,17 +1230,13 @@ export class SqlResolverWriter {
     tableMapping: TypeTable,
     trxExpr: ts.Expression,
     idExprs: ts.Expression[],
-    softDeleteWhereWrapper: ExprWrapper | undefined,
     props: ts.Expression
   ): ts.Expression {
-    let whereExpr = this.getWhereExpression(
+    const whereExpr = this.getWhereExpression(
       tableMapping,
       ts.createCall(trxExpr, undefined, [ts.createStringLiteral(tableMapping.table.name)]),
       idExprs
     );
-    if (softDeleteWhereWrapper) {
-      whereExpr = softDeleteWhereWrapper(whereExpr);
-    }
     return ts.createCall(ts.createPropertyAccess(whereExpr, 'update'), undefined, [props]);
   }
 
@@ -1413,13 +1466,7 @@ export class SqlResolverWriter {
     identityTableMapping: TypeTable,
     module: TsModule
   ): [string, ts.Expression] {
-    const fieldMapping = identityTableMapping.fieldMappings.get(typeDiscriminatorField);
-    if (!fieldMapping || !isColumns(fieldMapping)) {
-      throw new Error(
-        `No column mapping for type discriminator field "${typeDiscriminatorField.name}"` +
-          ` in table "${identityTableMapping.table.name}"`
-      );
-    }
+    const fieldMapping = this.getFieldColumns(identityTableMapping, typeDiscriminatorField, 'type discriminator');
     const enumsId = this.getEnumsImport(module);
     const enumName = getNamedType(typeDiscriminatorField.type).name;
     const enumValue = ts.createPropertyAccess(
@@ -1434,53 +1481,6 @@ export class SqlResolverWriter {
       [enumValue]
     );
     return [fieldMapping.columns[0].name, sqlValue];
-  }
-
-  private getSoftDeleteInfo(
-    softDeleteField: FieldType,
-    tableMapping: TypeTable,
-    resolverNodes: ResolverNodes
-  ): {
-    softDeleteColumn: string;
-    softDeleteWhereWrapper: ExprWrapper;
-    softDeleteValueExpr: ts.Expression;
-  } {
-    const fieldMapping = tableMapping.fieldMappings.get(softDeleteField);
-    if (!fieldMapping || !isColumns(fieldMapping)) {
-      throw new Error(
-        `No column mapping for soft-delete field "${softDeleteField.name}" in table "${tableMapping.table.name}"`
-      );
-    }
-    const softDeleteColumn = fieldMapping.columns[0].name;
-
-    if (getNamedType(softDeleteField.type).name === 'Boolean') {
-      return {
-        softDeleteColumn,
-        softDeleteWhereWrapper: expr =>
-          ts.createCall(ts.createPropertyAccess(expr, 'where'), undefined, [
-            ts.createStringLiteral(softDeleteColumn),
-            ts.createFalse()
-          ]),
-        softDeleteValueExpr: ts.createTrue()
-      };
-    } else {
-      return {
-        softDeleteColumn,
-        softDeleteWhereWrapper: expr =>
-          ts.createCall(ts.createPropertyAccess(expr, 'whereNull'), undefined, [
-            ts.createStringLiteral(softDeleteColumn)
-          ]),
-        // context.knex.fn.now()
-        softDeleteValueExpr: ts.createCall(
-          ts.createPropertyAccess(
-            ts.createPropertyAccess(ts.createPropertyAccess(resolverNodes.contextId, 'knex'), 'fn'),
-            'now'
-          ),
-          undefined,
-          undefined
-        )
-      };
-    }
   }
 
   private getMetaImport(module: TsModule): ts.Identifier {

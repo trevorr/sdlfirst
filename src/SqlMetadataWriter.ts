@@ -89,11 +89,9 @@ export class SqlMetadataWriter {
           const { table } = mapping;
           propMap['tableName'] = ts.createStringLiteral(table.name);
 
-          if (table.primaryKey.parts.length > 0) {
-            propMap['idColumns'] = ts.createArrayLiteral(
-              table.primaryKey.parts.map(part => ts.createStringLiteral(part.column.name))
-            );
-          }
+          propMap['idColumns'] = ts.createArrayLiteral(
+            table.primaryKey.parts.map(part => ts.createStringLiteral(part.column.name))
+          );
 
           if (identityTypeInfo.externalIdField && identityTypeInfo.externalIdDirective) {
             const fieldMapping = mapping.fieldMappings.get(identityTypeInfo.externalIdField);

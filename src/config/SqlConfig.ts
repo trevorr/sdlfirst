@@ -61,7 +61,7 @@ export const defaultConfig: SqlConfig = {
   internalIdSqlType: undefined,
 
   tableIdSuffix: '_kind',
-  tableIdSqlType: 'char(1)',
+  tableIdSqlType: 'varchar(2)',
 
   tableOptions: {
     engine: 'InnoDB',
