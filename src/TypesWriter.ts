@@ -12,11 +12,11 @@ export interface TypesWriterConfig extends PathConfig {
 export const defaultConfig: TypesWriterConfig = {
   ...defaultPathConfig,
   scalarTypes: {
-    Date: 'string',
-    DateTime: 'Date | string',
+    Date: 'Date',
+    DateTime: 'Date',
     JSON: 'any',
-    Time: 'string',
-    URI: 'URL | string'
+    Time: 'Date',
+    URI: 'URL'
   }
 };
 
