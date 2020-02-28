@@ -491,7 +491,11 @@ export class SqlResolverWriter {
     trxBlock.addStatement(ts.createIf(this.eqEqNull(idExprs[0]), ts.createReturn(ts.createFalse())));
 
     // delete identity row
-    let deleteExpr = this.getWhereExpression(identityTableMapping, trxId, idExprs);
+    let deleteExpr = this.getWhereExpression(
+      identityTableMapping,
+      ts.createCall(trxId, undefined, [ts.createStringLiteral(identityTableMapping.table.name)]),
+      idExprs
+    );
     if (softDeleteColumn && softDeleteValueExpr) {
       deleteExpr = ts.createCall(ts.createPropertyAccess(deleteExpr, 'update'), undefined, [
         ts.createObjectLiteral([ts.createPropertyAssignment(softDeleteColumn, softDeleteValueExpr)])
