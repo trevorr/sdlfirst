@@ -60,10 +60,10 @@ export interface TypeInfo<T = AnalyzedType> {
   // field with @autoinc directive, if any
   autoincField?: FieldType;
 
-  // field with @sid or @rid directive, if any
+  // field with @wkid or @rid directive, if any
   externalIdField?: FieldType;
 
-  // @sid or @rid directive of external ID field, if any
+  // @wkid or @rid directive of external ID field, if any
   externalIdDirective?: DirectiveNode;
 
   // field used to determine concrete type of interface
@@ -291,12 +291,12 @@ export class Analyzer {
 
       const hasAutoinc = hasDirective(field, config.autoincDirective);
       const ridDir = findFirstDirective(field, config.randomIdDirective);
-      const sidDir = findFirstDirective(field, config.stringIdDirective);
-      const dirCount = (hasAutoinc ? 1 : 0) + (ridDir ? 1 : 0) + (sidDir ? 1 : 0);
+      const wkidDir = findFirstDirective(field, config.wkidDirective);
+      const dirCount = (hasAutoinc ? 1 : 0) + (ridDir ? 1 : 0) + (wkidDir ? 1 : 0);
       if (dirCount > 1) {
         throw new Error(
           `Only one of @${config.autoincDirective}, @${config.randomIdDirective}, ` +
-            `or @${config.stringIdDirective} allowed on ${type.name}.${field.name}`
+            `or @${config.wkidDirective} allowed on ${type.name}.${field.name}`
         );
       }
 
@@ -315,17 +315,17 @@ export class Analyzer {
         typeInfo.autoincField = field;
       }
 
-      if (ridDir || sidDir) {
+      if (ridDir || wkidDir) {
         if (!isScalarType(getNullableType(field.type))) {
           throw new Error(`Scalar type expected for external ID field ${type.name}.${field.name}`);
         }
         if (typeInfo.externalIdField != null) {
           throw new Error(
-            `Only one @${config.randomIdDirective} or @${config.stringIdDirective} field allowed in type ${type.name}`
+            `Only one @${config.randomIdDirective} or @${config.wkidDirective} field allowed in type ${type.name}`
           );
         }
         typeInfo.externalIdField = field;
-        typeInfo.externalIdDirective = ridDir || sidDir;
+        typeInfo.externalIdDirective = ridDir || wkidDir;
         foundId = true;
       }
 

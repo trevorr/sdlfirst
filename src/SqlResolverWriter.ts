@@ -553,8 +553,8 @@ export class SqlResolverWriter {
       ts.createObjectBindingPattern(
         Object.values(inputType.getFields()).map(field => {
           let idSuffix;
-          if (hasDirectives(field, [this.config.stringIdDirective, this.config.stringIdRefDirective])) {
-            idSuffix = this.config.stringIdName;
+          if (hasDirectives(field, [this.config.wkidDirective, this.config.wkidRefDirective])) {
+            idSuffix = this.config.wkidName;
           } else if (hasDirective(field, this.config.randomIdRefDirective)) {
             idSuffix = this.config.qualifiedIdName;
           }
@@ -645,7 +645,7 @@ export class SqlResolverWriter {
     return hasDirectives(field, [
       this.config.idDirective,
       this.config.randomIdDirective,
-      this.config.stringIdDirective
+      this.config.wkidDirective
     ]);
   }
 
@@ -664,10 +664,10 @@ export class SqlResolverWriter {
         const targetField = this.findTargetField(field, targetType) || field;
         switch (fieldType.name) {
           case 'ID':
-            const sidDir =
-              findFirstDirective(field, this.config.stringIdDirective) ||
-              findFirstDirective(field, this.config.stringIdRefDirective);
-            expr = getRangeValidator(expr, sidDir, 'string', {
+            const wkidDir =
+              findFirstDirective(field, this.config.wkidDirective) ||
+              findFirstDirective(field, this.config.wkidRefDirective);
+            expr = getRangeValidator(expr, wkidDir, 'string', {
               betweenMethod: 'length',
               equalMethod: 'length',
               minMethod: 'minLength',
@@ -1336,7 +1336,7 @@ export class SqlResolverWriter {
         } else {
           const refDir =
             findFirstDirective(inputField, this.config.randomIdRefDirective) ||
-            findFirstDirective(inputField, this.config.stringIdRefDirective);
+            findFirstDirective(inputField, this.config.wkidRefDirective);
           if (refDir) {
             result.push(
               ts.createPropertyAssignment(

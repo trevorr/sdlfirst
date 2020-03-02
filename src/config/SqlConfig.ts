@@ -14,17 +14,17 @@ export interface SqlConfig extends DirectiveConfig, PathConfig {
   randomIdCharset?: string;
   randomIdCollate?: string;
 
-  // column configuration for @sid ID fields
-  stringIdName: string;
-  stringIdCharset?: string;
-  stringIdCollate?: string;
+  // column configuration for @wkid ID fields
+  wkidName: string;
+  wkidCharset?: string;
+  wkidCollate?: string;
 
-  // column type for ID fields without @rid, @sid, or @autoinc
+  // column type for ID fields without @rid, @wkid, or @autoinc
   idSqlType?: string; // default is requiring @sqlType
   idCharset?: string;
   idCollate?: string;
 
-  // column configuration for hidden auto-increment ID of types with @rid or @sid
+  // column configuration for hidden auto-increment ID of types with @rid or @wkid
   internalIdName: string;
   internalIdSuffix: string;
   internalIdSqlType?: string; // default is autoIncrementType
@@ -48,9 +48,9 @@ export const defaultConfig: SqlConfig = {
   randomIdCharset: 'utf8mb4',
   randomIdCollate: 'utf8mb4_bin',
 
-  stringIdName: 'sid',
-  stringIdCharset: 'utf8mb4',
-  stringIdCollate: 'utf8mb4_bin',
+  wkidName: 'wkid',
+  wkidCharset: 'utf8mb4',
+  wkidCollate: 'utf8mb4_bin',
 
   idSqlType: undefined,
   idCharset: undefined,

@@ -311,7 +311,7 @@ export class MutationBuilder {
         }
       } else {
         inputType = fieldType;
-        inputDir = findFirstDirective(field, this.config.stringIdDirective);
+        inputDir = findFirstDirective(field, this.config.wkidDirective);
       }
     }
 
@@ -512,8 +512,8 @@ export class MutationBuilder {
       case this.config.randomIdDirective:
         name = this.config.randomIdRefDirective;
         break;
-      case this.config.stringIdDirective:
-        name = this.config.stringIdRefDirective;
+      case this.config.wkidDirective:
+        name = this.config.wkidRefDirective;
         if (originalDirective.arguments) {
           args.push(...originalDirective.arguments);
         }
@@ -625,7 +625,7 @@ export class MutationBuilder {
       Array.from(this.getReadonlyDirectives()).concat(
         this.config.immutableDirective,
         this.config.idDirective,
-        this.config.stringIdDirective
+        this.config.wkidDirective
       )
     );
   }

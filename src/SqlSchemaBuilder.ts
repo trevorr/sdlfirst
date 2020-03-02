@@ -271,19 +271,19 @@ export class SqlSchemaBuilder {
       switch (fieldType.name) {
         case 'ID':
           const ridDir = findFirstDirective(field, this.config.randomIdDirective);
-          const sidDir = findFirstDirective(field, this.config.stringIdDirective);
+          const wkidDir = findFirstDirective(field, this.config.wkidDirective);
           if (ridDir != null) {
             name = this.config.randomIdName;
             sqlType = this.config.randomIdSqlType;
             charset = this.config.randomIdCharset;
             collate = this.config.randomIdCollate;
             uniqueKey = true;
-          } else if (sidDir != null) {
-            const maxArg = getRequiredDirectiveArgument(sidDir, 'maxLength', 'IntValue');
-            name = this.config.stringIdName;
+          } else if (wkidDir != null) {
+            const maxArg = getRequiredDirectiveArgument(wkidDir, 'maxLength', 'IntValue');
+            name = this.config.wkidName;
             sqlType = `varchar(${(maxArg.value as IntValueNode).value})`;
-            charset = this.config.stringIdCharset;
-            collate = this.config.stringIdCollate;
+            charset = this.config.wkidCharset;
+            collate = this.config.wkidCollate;
             uniqueKey = true;
           } else if (autoIncrement) {
             sqlType = this.config.autoIncrementType;
@@ -293,7 +293,7 @@ export class SqlSchemaBuilder {
             collate = this.config.idCollate;
           } else {
             throw new Error(
-              `@sqlType, @autoinc, @sid, or @rid directive required for ID type${formatLocationOf(field.astNode)}`
+              `@sqlType, @autoinc, @wkid, or @rid directive required for ID type${formatLocationOf(field.astNode)}`
             );
           }
           break;
@@ -801,11 +801,11 @@ function getColumnNameInfo(
 
   if (!name) {
     const ridDir = findFirstDirective(field, config.randomIdDirective);
-    const sidDir = findFirstDirective(field, config.stringIdDirective);
+    const wkidDir = findFirstDirective(field, config.wkidDirective);
     if (ridDir != null) {
       name = config.randomIdName;
-    } else if (sidDir != null) {
-      name = config.stringIdName;
+    } else if (wkidDir != null) {
+      name = config.wkidName;
     } else {
       name = snakeCase(field.name);
     }

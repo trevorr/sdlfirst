@@ -1,6 +1,6 @@
 """
 Indicates fields that define the type's identity (and its table's primary key).
-If no fields have @id, but there is a @rid or @sid field, the table is given a (hidden)
+If no fields have @id, but there is a @rid or @wkid field, the table is given a (hidden)
 auto-increment ID that is used as its primary key. Therefore, @id is typically only used
 for join tables. Implicitly immutable.
 """
@@ -36,7 +36,7 @@ Indicates a field containing a type's randomly-generated external identity strin
 If the containing type also has a table ID assigned (assigned by `@sqlTable(id)`),
 this ID string will be automatically prefixed with it. The prefix can be used (and
 in such cases is required) if the type is referenced by interface or union.
-Only one field per type may have a @rid or @sid directive.
+Only one field per type may have a @rid or @wkid directive.
 Implicitly read-only.
 """
 directive @rid on FIELD_DEFINITION
@@ -53,24 +53,24 @@ directive @ridRef(
 ) on INPUT_FIELD_DEFINITION
 
 """
-Indicates a field containing a type's explicitly-specified external identity string.
-Only one field per type may have a @rid or @sid directive.
+Indicates a field containing a type's well-known external identity string.
+Only one field per type may have a @rid or @wkid directive.
 Implicitly immutable.
 """
-directive @sid(
+directive @wkid(
   """The maximum length of the ID."""
   maxLength: Int!
 ) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
 
 """
-Indicates that an input field is a reference to a @sid field of an object of the given type.
+Indicates that an input field is a reference to a @wkid field of an object of the given type.
 """
-directive @sidRef(
+directive @wkidRef(
   """The maximum length of the ID."""
   maxLength: Int!
   """
   The type of object to which this input field refers.
-  It must be an object or interface containing a @sid field or a union of objects that do.
+  It must be an object or interface containing a @wkid field or a union of objects that do.
   """
   type: String!
 ) on INPUT_FIELD_DEFINITION
@@ -213,6 +213,7 @@ directive @sqlTable(
   """
   Specifies a string used to identify the table when a field references a polymorphic type (interface or union).
   Every object type of such an interface or union must have a unique ID specified using this directive.
+  The string is also used as a prefix when constructing qualified external identifiers.
   """
   id: String
   """Specifies the name of the database table used to store the type."""

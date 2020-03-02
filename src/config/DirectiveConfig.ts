@@ -24,14 +24,14 @@ export interface DirectiveConfig {
   sqlTableDirective: string;
   sqlTypeDirective: string;
   sqlValueDirective: string;
-  stringIdDirective: string;
-  stringIdRefDirective: string;
   typeDiscriminatorDirective: string;
   uniqueDirective: string;
   updatedAtDirective: string;
   updateDirective: string;
   updateNestedDirective: string;
   useManyToManyDirective: string;
+  wkidDirective: string;
+  wkidRefDirective: string;
 }
 
 export const defaultConfig: DirectiveConfig = {
@@ -60,12 +60,12 @@ export const defaultConfig: DirectiveConfig = {
   sqlTableDirective: 'sqlTable',
   sqlTypeDirective: 'sqlType',
   sqlValueDirective: 'sqlValue',
-  stringIdDirective: 'sid',
-  stringIdRefDirective: 'sidRef',
   typeDiscriminatorDirective: 'typeDiscriminator',
   uniqueDirective: 'unique',
   updatedAtDirective: 'updatedAt',
   updateDirective: 'update',
   updateNestedDirective: 'updateNested',
-  useManyToManyDirective: 'useManyToMany'
+  useManyToManyDirective: 'useManyToMany',
+  wkidDirective: 'wkid',
+  wkidRefDirective: 'wkidRef'
 };

@@ -99,7 +99,7 @@ export class SqlMetadataWriter {
               const propName =
                 identityTypeInfo.externalIdDirective.name.value === this.config.randomIdDirective
                   ? 'randomIdColumn'
-                  : 'stringIdColumn';
+                  : 'wellKnownIdColumn';
               propMap[propName] = ts.createStringLiteral(fieldMapping.columns[0].name);
             }
           }
