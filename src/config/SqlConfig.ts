@@ -31,6 +31,8 @@ export interface SqlConfig extends DirectiveConfig, PathConfig {
 
   tableIdSuffix: string;
   tableIdSqlType: string;
+  tableIdCharset?: string;
+  tableIdCollate?: string;
 
   tableOptions: SqlTableOptions;
 }
@@ -62,6 +64,8 @@ export const defaultConfig: SqlConfig = {
 
   tableIdSuffix: '_kind',
   tableIdSqlType: 'varchar(2)',
+  tableIdCharset: 'utf8mb4',
+  tableIdCollate: 'utf8mb4_bin',
 
   tableOptions: {
     engine: 'InnoDB',

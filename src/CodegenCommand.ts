@@ -49,14 +49,20 @@ export default abstract class CodegenCommand extends Command {
 
   async codegen(): Promise<string[]> {
     const sdlFirst = new SDLFirst(this.inputSchema!);
-    const files = ([] as string[]).concat(
-      await sdlFirst.writeTypes(this.outputConfig, this.inputAst),
-      await sdlFirst.writeSqlMetadata(this.outputConfig),
-      await sdlFirst.writeSqlTables(this.outputConfig),
-      await sdlFirst.writeEnumMappings(this.outputConfig),
-      await sdlFirst.writeResolvers(this.outputConfig),
-      await sdlFirst.writeFieldVisitors(this.outputConfig)
-    );
+    const files: string[] = [];
+    console.log('Writing types...');
+    files.push(...(await sdlFirst.writeTypes(this.outputConfig, this.inputAst)));
+    console.log('Writing SQL metadata...');
+    files.push(...(await sdlFirst.writeSqlMetadata(this.outputConfig)));
+    console.log('Writing SQL tables...');
+    files.push(...(await sdlFirst.writeSqlTables(this.outputConfig)));
+    console.log('Writing enum mappings...');
+    files.push(...(await sdlFirst.writeEnumMappings(this.outputConfig)));
+    console.log('Writing GraphQL resolvers...');
+    files.push(...(await sdlFirst.writeResolvers(this.outputConfig)));
+    console.log('Writing field visitors...');
+    files.push(...(await sdlFirst.writeFieldVisitors(this.outputConfig)));
+    console.log(`Wrote ${files.length} files`);
     return files;
   }
 }

@@ -685,6 +685,8 @@ export class SqlSchemaBuilder {
     const discColumn = {
       name: refName + this.config.tableIdSuffix,
       type: this.config.tableIdSqlType,
+      charset: this.config.tableIdCharset,
+      collate: this.config.tableIdCollate,
       notNull,
       discriminator: true
     };
