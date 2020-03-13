@@ -2,10 +2,13 @@ import assert from 'assert';
 import {
   ArgumentNode,
   BooleanValueNode,
+  DirectiveNode,
   GraphQLCompositeType,
+  GraphQLEnumType,
   GraphQLNamedType,
   GraphQLObjectType,
   GraphQLOutputType,
+  GraphQLScalarType,
   IntValueNode,
   isCompositeType,
   isEnumType,
@@ -19,8 +22,17 @@ import {
   ObjectValueNode,
   StringValueNode
 } from 'graphql';
+import { singular } from 'pluralize';
 import { snakeCase } from 'snake-case';
-import { Analyzer, EnumValueType, FieldType, TableType, TypeInfo, isConnectionFieldInfo } from './Analyzer';
+import {
+  Analyzer,
+  EnumValueType,
+  FieldType,
+  isConnectionFieldInfo,
+  TableType,
+  TableTypeInfo,
+  TypeInfo
+} from './Analyzer';
 import { defaultConfig, SqlConfig } from './config/SqlConfig';
 import { SqlColumn } from './model/SqlColumn';
 import { SqlKeyType } from './model/SqlKey';
@@ -40,11 +52,13 @@ export interface FieldColumns {
 
 export interface FieldJoin {
   field: FieldType;
-  toTable: TypeTable;
+  toTable: TableMapping;
   fromFields?: FieldType[]; // one:many with backref join
   toFields?: FieldType[]; // one:many
   pkPrefix?: boolean; // many:many: if referring table key is first half of join table key (else last half)
-  nodeTable?: TypeTable; // many:many
+  nodeTable?: TableMapping; // many:many connection
+  sequenceColumn?: SqlColumn; // list sequence column
+  listColumns?: SqlColumn[]; // scalar list columns
 }
 
 export type FieldMapping = FieldColumns | FieldJoin;
@@ -57,15 +71,29 @@ export function isJoin(mapping: FieldMapping): mapping is FieldJoin {
   return 'toTable' in mapping;
 }
 
-export interface TypeTable {
-  type: TableType;
+export interface AbstractTableMapping {
   table: SqlTable;
   fieldMappings: Map<FieldType, FieldMapping>;
 }
 
+export interface TypeTableMapping extends AbstractTableMapping {
+  type: TableType;
+}
+
+export interface FieldTableMapping extends AbstractTableMapping {
+  containingType: GraphQLCompositeType;
+  field: FieldType;
+}
+
+export type TableMapping = TypeTableMapping | FieldTableMapping;
+
+export function isTypeTableMapping(mapping: TableMapping): mapping is TypeTableMapping {
+  return 'type' in mapping;
+}
+
 export interface SqlSchemaMappings {
-  tables: readonly TypeTable[];
-  getIdentityTableForType(type: TableType): TableMapping | undefined;
+  tables: readonly TableMapping[];
+  getIdentityTableForType(type: TableType): InternalTableMapping<TypeTableMapping> | undefined;
 }
 
 enum FieldsMapped {
@@ -76,15 +104,17 @@ enum FieldsMapped {
   ALL_DATA
 }
 
-interface TableMapping extends TypeTable {
+type InternalTableMapping<T extends TableMapping = TableMapping> = T & {
   fieldsMapped: FieldsMapped;
   fieldNames?: Set<string>;
-}
+};
+
+type SqlColumnType = { name?: string } & Omit<SqlColumn, 'name'>;
 
 export class SqlSchemaBuilder {
   private readonly config: SqlConfig;
-  private readonly tableMappingByName = new Map<string, TableMapping>();
-  private readonly identityTableMappingByType = new Map<TableType, TableMapping>();
+  private readonly tableMappingByName = new Map<string, InternalTableMapping>();
+  private readonly identityTableMappingByType = new Map<TableType, InternalTableMapping<TypeTableMapping>>();
 
   constructor(private readonly analyzer: Analyzer, config?: Partial<SqlConfig>) {
     this.config = Object.assign({}, defaultConfig, config);
@@ -104,7 +134,7 @@ export class SqlSchemaBuilder {
     };
   }
 
-  private generateTable(typeInfo: TypeInfo<TableType>): TableMapping | null {
+  private generateTable(typeInfo: TypeInfo<TableType>): InternalTableMapping | null {
     const { type, identityTypeInfo } = typeInfo;
 
     // return table if already generated for type
@@ -114,7 +144,11 @@ export class SqlSchemaBuilder {
       const name = getTableName(type, this.config);
       const existing = this.tableMappingByName.get(name);
       if (existing) {
-        throw new Error(`Table name "${name}" for type "${type.name}" already used by type "${existing.type.name}"`);
+        let message = `Table name "${name}" for type "${type.name}" already used`;
+        if (isTypeTableMapping(existing)) {
+          message += `by type "${existing.type.name}"`;
+        }
+        throw new Error(message);
       }
 
       const fields = type.getFields();
@@ -132,7 +166,7 @@ export class SqlSchemaBuilder {
         }
       }
 
-      mapping = this.emitTable(name, type, fieldNames);
+      mapping = this.emitTypeTable(name, type, fieldNames);
       this.identityTableMappingByType.set(type, mapping);
     } else if (mapping.fieldsMapped >= FieldsMapped.SOME_DATA) {
       return mapping;
@@ -188,8 +222,8 @@ export class SqlSchemaBuilder {
     return mapping;
   }
 
-  private emitTable(name: string, type: TableType, fieldNames?: Set<string>): TableMapping {
-    const table: SqlTable = {
+  private newTable(name: string): SqlTable {
+    return {
       name,
       columns: [],
       primaryKey: {
@@ -199,6 +233,18 @@ export class SqlSchemaBuilder {
       keys: [],
       options: { ...this.config.tableOptions }
     };
+  }
+
+  private emitTypeTable(
+    name: string,
+    type: TableType,
+    fieldNames?: Set<string>
+  ): InternalTableMapping<TypeTableMapping> {
+    const table = this.newTable(name);
+    const tableId = this.analyzer.getTableId(type);
+    if (tableId) {
+      table.discriminatorValue = tableId;
+    }
     const mapping = {
       type,
       table,
@@ -210,8 +256,25 @@ export class SqlSchemaBuilder {
     return mapping;
   }
 
+  private emitFieldTable(
+    name: string,
+    containingType: TableType,
+    field: FieldType
+  ): InternalTableMapping<FieldTableMapping> {
+    const table = this.newTable(name);
+    const mapping = {
+      containingType,
+      field,
+      table,
+      fieldMappings: new Map(),
+      fieldsMapped: FieldsMapped.NONE
+    };
+    this.tableMappingByName.set(name, mapping);
+    return mapping;
+  }
+
   private emitColumnsForFields(
-    mapping: TableMapping,
+    mapping: InternalTableMapping,
     typeInfo: TypeInfo<TableType>,
     fieldNames?: Iterable<string>
   ): void {
@@ -225,7 +288,11 @@ export class SqlSchemaBuilder {
     }
   }
 
-  private emitColumnsForField(mapping: TableMapping, typeInfo: TypeInfo<TableType>, field: FieldType): SqlColumn[] {
+  private emitColumnsForField(
+    mapping: InternalTableMapping,
+    typeInfo: TypeInfo<TableType>,
+    field: FieldType
+  ): SqlColumn[] {
     if (hasDirective(field, this.config.derivedDirective)) {
       return [];
     }
@@ -251,89 +318,15 @@ export class SqlSchemaBuilder {
       typeDir = findFirstDirective(fieldType, this.config.sqlTypeDirective);
     }
     if (typeDir != null) {
-      // column has explicit SQL type
-      const typeArg = getRequiredDirectiveArgument(typeDir, 'type', 'StringValue');
-      sqlType = (typeArg.value as StringValueNode).value;
-      const charsetArg = getDirectiveArgument(typeDir, 'charset');
-      if (charsetArg != null) {
-        charset = (charsetArg.value as StringValueNode).value;
-      }
-      const collateArg = getDirectiveArgument(typeDir, 'collate');
-      if (collateArg != null) {
-        collate = (collateArg.value as StringValueNode).value;
-      }
-      const sridArg = getDirectiveArgument(typeDir, 'srid');
-      if (sridArg != null) {
-        srid = parseInt((sridArg.value as IntValueNode).value, 10);
-      }
+      ({ type: sqlType, charset, collate, srid } = this.getExplicitSqlType(typeDir));
     } else if (isScalarType(fieldType)) {
-      // determine SQL type from scalar type
-      switch (fieldType.name) {
-        case 'ID':
-          const ridDir = findFirstDirective(field, this.config.randomIdDirective);
-          const wkidDir = findFirstDirective(field, this.config.wkidDirective);
-          if (ridDir != null) {
-            name = this.config.randomIdName;
-            sqlType = this.config.randomIdSqlType;
-            charset = this.config.randomIdCharset;
-            collate = this.config.randomIdCollate;
-            uniqueKey = true;
-          } else if (wkidDir != null) {
-            const maxArg = getRequiredDirectiveArgument(wkidDir, 'maxLength', 'IntValue');
-            name = this.config.wkidName;
-            sqlType = `varchar(${(maxArg.value as IntValueNode).value})`;
-            charset = this.config.wkidCharset;
-            collate = this.config.wkidCollate;
-            uniqueKey = true;
-          } else if (autoIncrement) {
-            sqlType = this.config.autoIncrementType;
-          } else if (this.config.idSqlType != null) {
-            sqlType = this.config.idSqlType;
-            charset = this.config.idCharset;
-            collate = this.config.idCollate;
-          } else {
-            throw new Error(
-              `@sqlType, @autoinc, @wkid, or @rid directive required for ID type${formatLocationOf(field.astNode)}`
-            );
-          }
-          break;
-        case 'String':
-          const lengthDir = findFirstDirective(field, this.config.lengthDirective);
-          if (lengthDir != null) {
-            const maxArg = getRequiredDirectiveArgument(lengthDir, 'max', 'IntValue');
-            sqlType = `varchar(${(maxArg.value as IntValueNode).value})`;
-          } else {
-            sqlType = 'text';
-          }
-          charset = this.config.tableOptions.defaultCharset;
-          collate = this.config.tableOptions.defaultCollate;
-          break;
-        case 'Float':
-          sqlType = 'double';
-          break;
-        case 'Int':
-          sqlType = autoIncrement ? this.config.autoIncrementType : 'int(11)';
-          break;
-        case 'Boolean':
-          sqlType = this.config.booleanSqlType;
-          break;
-        default:
-          throw new Error(
-            `@sqlType directive required for custom scalar type "${fieldType.name}"${formatLocationOf(field.astNode)}`
-          );
-      }
+      ({ name = name, type: sqlType, charset, collate, uniqueKey = uniqueKey } = this.getScalarSqlType(
+        fieldType,
+        field,
+        autoIncrement
+      ));
     } else if (isEnumType(fieldType)) {
-      // for enums without @sqlType, determine maximum value length and whether all are ints
-      const fieldTypeInfo = this.analyzer.getTypeInfo(fieldType);
-      if (fieldTypeInfo.valueType === EnumValueType.STRING) {
-        sqlType = `varchar(${fieldTypeInfo.maxLength})`;
-        charset = this.config.tableOptions.defaultCharset;
-        collate = this.config.tableOptions.defaultCollate;
-      } else if (fieldTypeInfo.minIntValue >= 0 && fieldTypeInfo.maxIntValue <= 255) {
-        sqlType = 'tinyint(3) unsigned';
-      } else {
-        sqlType = 'int(11)';
-      }
+      ({ type: sqlType, charset, collate } = this.getEnumSqlType(fieldType));
     } else if (isObjectType(fieldType)) {
       const fieldInfo = this.analyzer.findFieldInfo(field);
       if (fieldInfo && isConnectionFieldInfo(fieldInfo)) {
@@ -367,7 +360,7 @@ export class SqlSchemaBuilder {
           const tableName = (fieldArg.value as StringValueNode).value;
           let joinTableMapping = this.tableMappingByName.get(tableName);
           if (!joinTableMapping) {
-            joinTableMapping = this.emitTable(tableName, edgeType);
+            joinTableMapping = this.emitTypeTable(tableName, edgeType);
           }
           mapping.fieldMappings.set(field, {
             field,
@@ -441,8 +434,101 @@ export class SqlSchemaBuilder {
       mapping.fieldMappings.set(field, { field, columns });
       return columns;
     } else if (isListType(fieldType)) {
-      // TODO: sequenced join table for lists
-      throw new Error(`List types are not currently supported: ${fieldType.toString()}`);
+      let elementType: GraphQLOutputType = fieldType.ofType;
+      if (!isNonNullType(elementType)) {
+        throw new Error(`Nullable list elements are not supported${formatLocationOf(field.astNode)}`);
+      }
+      elementType = elementType.ofType;
+      if (isListType(elementType)) {
+        throw new Error(`Lists of lists are not supported${formatLocationOf(field.astNode)}`);
+      }
+
+      const joinTableMapping = this.getJoinTable(table, typeInfo, field);
+      assert(joinTableMapping.fieldsMapped === FieldsMapped.SOME_KEYS);
+      const joinTable = joinTableMapping.table;
+
+      // if the list is ordered or non-unique, we need a sequence as part of the primary key
+      const ordered = !hasDirective(field, this.config.unorderedDirective);
+      let sequenceColumn;
+      if (ordered || !uniqueKey) {
+        sequenceColumn = {
+          name: this.config.sequenceName,
+          type: this.config.sequenceSqlType,
+          notNull: true
+        };
+        joinTable.columns.push(sequenceColumn);
+        joinTable.primaryKey.parts.push({
+          column: sequenceColumn,
+          descending: false
+        });
+      }
+
+      // list names are usually plural, but the column name should be singular
+      if (!explicitName) {
+        name = singular(name);
+      }
+
+      let keyColumns;
+      if (isCompositeType(elementType)) {
+        const elementTypeInfo = this.analyzer.getTypeInfo(elementType);
+        if (elementTypeInfo.hasIdentity) {
+          keyColumns = this.addTypeReferenceColumns(joinTable, elementType, name, explicitName, true, false);
+        } else if (isObjectType(elementType)) {
+          if (uniqueKey) {
+            throw new Error(`@unique not supported for object value lists${formatLocationOf(field.astNode)}`);
+          }
+          this.emitColumnsForFields(joinTableMapping, elementTypeInfo as TableTypeInfo);
+        } else {
+          throw new Error(
+            `Lists of interfaces or unions without identity are not supported${formatLocationOf(field.astNode)}`
+          );
+        }
+      } else {
+        if ('astNode' in elementType) {
+          typeDir = findFirstDirective(elementType, this.config.sqlTypeDirective);
+        }
+        if (typeDir != null) {
+          ({ type: sqlType, charset, collate, srid } = this.getExplicitSqlType(typeDir));
+        } else if (isScalarType(elementType)) {
+          ({ type: sqlType, charset, collate } = this.getScalarSqlType(elementType, field));
+        } else {
+          ({ type: sqlType, charset, collate } = this.getEnumSqlType(elementType));
+        }
+        const column: SqlColumn = {
+          name,
+          type: sqlType,
+          charset,
+          collate,
+          srid,
+          notNull: true
+        };
+        joinTable.columns.push(column);
+        keyColumns = [column];
+      }
+
+      if (uniqueKey && keyColumns) {
+        const parts = keyColumns.map(column => ({ column, descending: false }));
+        if (!ordered) {
+          joinTable.primaryKey.parts = joinTable.primaryKey.parts.concat(parts);
+        } else {
+          joinTable.keys.push({
+            name,
+            type: SqlKeyType.UNIQUE,
+            parts: joinTable.primaryKey.parts.slice(0, -1).concat(parts)
+          });
+        }
+      }
+
+      this.emitJoinTableKeys(joinTableMapping.table, field);
+      joinTableMapping.fieldsMapped = FieldsMapped.ALL_DATA;
+      mapping.fieldMappings.set(field, {
+        field,
+        toTable: joinTableMapping,
+        pkPrefix: true,
+        sequenceColumn,
+        listColumns: keyColumns
+      });
+      return [];
     } else {
       throw new Error(`Unrecognized field type: ${(fieldType as GraphQLOutputType).toString()}`);
     }
@@ -473,6 +559,99 @@ export class SqlSchemaBuilder {
     const columns = [column];
     mapping.fieldMappings.set(field, { field, columns });
     return columns;
+  }
+
+  private getExplicitSqlType(typeDir: DirectiveNode): SqlColumnType {
+    const typeArg = getRequiredDirectiveArgument(typeDir, 'type', 'StringValue');
+    const sqlType = (typeArg.value as StringValueNode).value;
+    let charset, collate, srid;
+    const charsetArg = getDirectiveArgument(typeDir, 'charset');
+    if (charsetArg != null) {
+      charset = (charsetArg.value as StringValueNode).value;
+    }
+    const collateArg = getDirectiveArgument(typeDir, 'collate');
+    if (collateArg != null) {
+      collate = (collateArg.value as StringValueNode).value;
+    }
+    const sridArg = getDirectiveArgument(typeDir, 'srid');
+    if (sridArg != null) {
+      srid = parseInt((sridArg.value as IntValueNode).value, 10);
+    }
+    return { type: sqlType, charset, collate, srid };
+  }
+
+  private getScalarSqlType(type: GraphQLScalarType, field: FieldType, autoIncrement = false): SqlColumnType {
+    let name, sqlType, charset, collate, uniqueKey;
+    switch (type.name) {
+      case 'ID':
+        const ridDir = findFirstDirective(field, this.config.randomIdDirective);
+        const wkidDir = findFirstDirective(field, this.config.wkidDirective);
+        if (ridDir != null) {
+          name = this.config.randomIdName;
+          sqlType = this.config.randomIdSqlType;
+          charset = this.config.randomIdCharset;
+          collate = this.config.randomIdCollate;
+          uniqueKey = true;
+        } else if (wkidDir != null) {
+          const maxArg = getRequiredDirectiveArgument(wkidDir, 'maxLength', 'IntValue');
+          name = this.config.wkidName;
+          sqlType = `varchar(${(maxArg.value as IntValueNode).value})`;
+          charset = this.config.wkidCharset;
+          collate = this.config.wkidCollate;
+          uniqueKey = true;
+        } else if (autoIncrement) {
+          sqlType = this.config.autoIncrementType;
+        } else if (this.config.idSqlType != null) {
+          sqlType = this.config.idSqlType;
+          charset = this.config.idCharset;
+          collate = this.config.idCollate;
+        } else {
+          throw new Error(
+            `@sqlType, @autoinc, @wkid, or @rid directive required for ID type${formatLocationOf(field.astNode)}`
+          );
+        }
+        break;
+      case 'String':
+        const lengthDir = findFirstDirective(field, this.config.lengthDirective);
+        if (lengthDir != null) {
+          const maxArg = getRequiredDirectiveArgument(lengthDir, 'max', 'IntValue');
+          sqlType = `varchar(${(maxArg.value as IntValueNode).value})`;
+        } else {
+          sqlType = 'text';
+        }
+        charset = this.config.tableOptions.defaultCharset;
+        collate = this.config.tableOptions.defaultCollate;
+        break;
+      case 'Float':
+        sqlType = 'double';
+        break;
+      case 'Int':
+        sqlType = autoIncrement ? this.config.autoIncrementType : 'int(11)';
+        break;
+      case 'Boolean':
+        sqlType = this.config.booleanSqlType;
+        break;
+      default:
+        throw new Error(
+          `@sqlType directive required for custom scalar type "${type.name}"${formatLocationOf(field.astNode)}`
+        );
+    }
+    return { name, type: sqlType, charset, collate, uniqueKey };
+  }
+
+  private getEnumSqlType(type: GraphQLEnumType): SqlColumnType {
+    let sqlType, charset, collate;
+    const typeInfo = this.analyzer.getTypeInfo(type);
+    if (typeInfo.valueType === EnumValueType.STRING) {
+      sqlType = `varchar(${typeInfo.maxLength})`;
+      charset = this.config.tableOptions.defaultCharset;
+      collate = this.config.tableOptions.defaultCollate;
+    } else if (typeInfo.minIntValue >= 0 && typeInfo.maxIntValue <= 255) {
+      sqlType = 'tinyint(3) unsigned';
+    } else {
+      sqlType = 'int(11)';
+    }
+    return { type: sqlType, charset, collate };
   }
 
   private emitKeys(table: SqlTable, keysArg: ArgumentNode): void {
@@ -521,7 +700,7 @@ export class SqlSchemaBuilder {
     }
   }
 
-  private getNodeTable(nodeType: GraphQLCompositeType): TableMapping {
+  private getNodeTable(nodeType: GraphQLCompositeType): InternalTableMapping {
     let typeInfo = this.analyzer.getTypeInfo(nodeType);
     if (typeInfo.identityTypeInfo) {
       typeInfo = typeInfo.identityTypeInfo;
@@ -538,46 +717,61 @@ export class SqlSchemaBuilder {
     parentTable: SqlTable,
     parentTypeInfo: TypeInfo<TableType>,
     field: FieldType,
-    joinType: GraphQLObjectType
-  ): TableMapping {
-    // analyze references to the target type to determine which can share a table
-    // 1. references from types sharing a common identity interface can share a table
-    // 2. references from multiple interface or concrete types require a table name prefix
-    // 3. references from multiple fields within a type also require a table name prefix
-    // 4. cases #2 and #3 can each result in a separate table name prefix
+    joinType?: TableType
+  ): InternalTableMapping {
+    let tableName;
+    let tableType: TableType | undefined;
+    let idPrefix;
     const parentType = parentTypeInfo.type;
-    const joinTypeInfo = this.analyzer.getTypeInfo(joinType);
-    const fieldCountByRefType = new Map<TableType, number>();
-    let commonIdentityInterface = null;
-    let nonIdentityInterface = false;
-    let multipleIdentityInterfaces = false;
-    let foundRef = false;
-    let foundIdentityInterface = null;
-    for (const ref of joinTypeInfo.referringFields) {
-      const { type } = ref;
-      const typeRefCount = (fieldCountByRefType.get(type) || 0) + 1;
-      fieldCountByRefType.set(type, typeRefCount);
+    if (joinType) {
+      // analyze references to the target type to determine which can share a table
+      // 1. references from types sharing a common identity interface can share a table
+      // 2. references from multiple interface or concrete types require a table name prefix
+      // 3. references from multiple fields within a type also require a table name prefix
+      // 4. cases #2 and #3 can each result in a separate table name prefix
+      const joinTypeInfo = this.analyzer.getTypeInfo(joinType);
+      const fieldCountByRefType = new Map<TableType, number>();
+      let nonIdentityInterface = false;
+      let multipleIdentityInterfaces = false;
+      let foundIdentityInterface = null;
+      let foundRef = false;
+      let commonIdentityInterface = null;
+      for (const ref of joinTypeInfo.referringFields) {
+        const { type } = ref;
+        const typeRefCount = (fieldCountByRefType.get(type) || 0) + 1;
+        fieldCountByRefType.set(type, typeRefCount);
 
-      const refTypeInfo = this.analyzer.getTypeInfo(type);
-      const identityInterface = refTypeInfo.identityTypeInfo;
-      if (identityInterface) {
-        if (commonIdentityInterface == null) {
-          commonIdentityInterface = identityInterface;
-        } else if (commonIdentityInterface !== identityInterface) {
-          multipleIdentityInterfaces = true;
+        const refTypeInfo = this.analyzer.getTypeInfo(type);
+        const identityInterface = refTypeInfo.identityTypeInfo;
+        if (identityInterface) {
+          if (commonIdentityInterface == null) {
+            commonIdentityInterface = identityInterface;
+          } else if (commonIdentityInterface !== identityInterface) {
+            multipleIdentityInterfaces = true;
+          }
+        } else {
+          nonIdentityInterface = true;
         }
-      } else {
-        nonIdentityInterface = true;
-      }
 
-      if (type === parentType && field === ref.field) {
-        foundRef = true;
-        foundIdentityInterface = identityInterface;
+        if (type === parentType && field === ref.field) {
+          foundRef = true;
+          foundIdentityInterface = identityInterface;
+        }
       }
+      assert(foundRef, `Reference not found: ${parentTable.name}.${field.name} -> ${joinType.name}`);
+      idPrefix = snakeCase(foundIdentityInterface ? foundIdentityInterface.type.name : parentType.name);
+      const needIdentityPrefix = multipleIdentityInterfaces || (nonIdentityInterface && fieldCountByRefType.size > 1);
+      const needFieldPrefix = (fieldCountByRefType.get(parentType) || 0) > 1;
+      tableName =
+        (needIdentityPrefix ? idPrefix + '_' : '') +
+        (needFieldPrefix ? snakeCase(field.name) + '_' : '') +
+        snakeCase(joinType.name);
+      tableType = joinType;
+    } else {
+      idPrefix = snakeCase(parentType.name);
+      tableName = `${idPrefix}_${snakeCase(field.name)}`;
     }
-    assert(foundRef, `Reference not found: ${parentTable.name}.${field.name} -> ${joinType.name}`);
 
-    let tableName = null;
     const nmtmDir = findFirstDirective(field, this.config.newManyToManyDirective);
     if (nmtmDir != null) {
       const fieldArg = getDirectiveArgument(nmtmDir, 'tableName');
@@ -586,18 +780,13 @@ export class SqlSchemaBuilder {
       }
     }
 
-    const idPrefix = snakeCase(foundIdentityInterface ? foundIdentityInterface.type.name : parentType.name);
-    if (tableName == null) {
-      const needIdentityPrefix = multipleIdentityInterfaces || (nonIdentityInterface && fieldCountByRefType.size > 1);
-      const needFieldPrefix = (fieldCountByRefType.get(parentType) || 0) > 1;
-      const tablePrefix =
-        (needIdentityPrefix ? idPrefix + '_' : '') + (needFieldPrefix ? snakeCase(field.name) + '_' : '');
-      tableName = tablePrefix + snakeCase(joinType.name);
-    }
-
     let childTableMapping = this.tableMappingByName.get(tableName);
     if (!childTableMapping) {
-      childTableMapping = this.emitTable(tableName, joinType);
+      if (tableType) {
+        childTableMapping = this.emitTypeTable(tableName, tableType);
+      } else {
+        childTableMapping = this.emitFieldTable(tableName, parentType, field);
+      }
     }
 
     // @useManyToMany emits a table without setting its primary key
@@ -701,7 +890,7 @@ export class SqlSchemaBuilder {
     return addedColumns;
   }
 
-  private generateDiscriminatedTables(targetTables: Map<string, TableType>): TableMapping {
+  private generateDiscriminatedTables(targetTables: Map<string, TableType>): InternalTableMapping {
     let refTableMapping = null;
     for (const type of targetTables.values()) {
       const typeInfo = this.analyzer.getTypeInfo(type);

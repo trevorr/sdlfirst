@@ -39,14 +39,14 @@ export function getElementType<T extends GraphQLType>(listType: T): T {
   return getNullableType(type.ofType);
 }
 
-enum WrapperType {
+export enum WrapperType {
   NON_NULL,
   LIST
 }
 
-interface WrappedType {
+export interface WrappedType {
   type: GraphQLNamedType;
-  wrappers: WrapperType[];
+  wrappers: WrapperType[]; // inner-most first
 }
 
 export function unwrapType(type: GraphQLType): WrappedType {
@@ -54,10 +54,10 @@ export function unwrapType(type: GraphQLType): WrappedType {
   for (;;) {
     if (isNonNullType(type)) {
       type = type.ofType;
-      wrappers.push(WrapperType.NON_NULL);
+      wrappers.unshift(WrapperType.NON_NULL);
     } else if (isListType(type)) {
       type = type.ofType;
-      wrappers.push(WrapperType.LIST);
+      wrappers.unshift(WrapperType.LIST);
     } else {
       break;
     }

@@ -75,7 +75,10 @@ directive @wkidRef(
   type: String!
 ) on INPUT_FIELD_DEFINITION
 
-"""Indicates a field that has a unique value among all objects of the containing type."""
+"""
+For non-list fields, indicates the field has a unique value among all objects of the containing type.
+For list fields, indicates that the list elements are unique within each list.
+"""
 directive @unique on FIELD_DEFINITION
 
 """Indicates the range constraints of a float field."""
@@ -150,6 +153,9 @@ directive @default(value: String!) on FIELD_DEFINITION
 
 """Indicates that a (non-null) field has a system-provided default value and can be optionally specified on creation."""
 directive @generatedDefault on FIELD_DEFINITION
+
+"""Indicates that ordering is not significant or maintained for a list field."""
+directive @unordered on FIELD_DEFINITION
 
 """Provides control over the generated create mutation."""
 directive @create (
@@ -252,6 +258,20 @@ directive @sqlValue(
   """Specifies a unique string value used to represent this enum value."""
   string: String
 ) on ENUM_VALUE
+
+enum SqlValueTransform {
+  LOWERCASE
+}
+
+"""
+Specifies how to derive the values stored in the database for an enum from the GraphQL names.
+The effect is equivalent to specifying @sqlValue on each value with the transformed names.
+If @sqlValue is explicitly specified for a value, it takes precedence.
+"""
+directive @sqlValues(
+  """Specifies a transform to apply to the enum value names to obtain database values."""
+  transform: SqlValueTransform
+) on ENUM
 
 """
 Explicitly indicates that a Connection field is a one-to-many relation and defines how the tables are joined.

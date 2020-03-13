@@ -3,20 +3,31 @@ import {
   getNamedType,
   getNullableType,
   GraphQLCompositeType,
+  GraphQLOutputType,
   isCompositeType,
   isEnumType,
   isInterfaceType,
+  isListType,
   isScalarType,
   isUnionType
 } from 'graphql';
 import { pascalCase } from 'pascal-case';
 import path from 'path';
 import ts from 'typescript';
-import { Analyzer, FieldType, TableType } from './Analyzer';
+import { Analyzer, FieldType, isTableType, TableType } from './Analyzer';
 import { defaultConfig as defaultSqlConfig, SqlConfig } from './config/SqlConfig';
 import { SqlColumn } from './model/SqlColumn';
 import { SqlTable } from './model/SqlTable';
-import { FieldColumns, FieldJoin, isColumns, isJoin, SqlSchemaMappings, TypeTable } from './SqlSchemaBuilder';
+import {
+  FieldColumns,
+  FieldJoin,
+  isColumns,
+  isJoin,
+  isTypeTableMapping,
+  SqlSchemaMappings,
+  TableMapping,
+  TypeTableMapping
+} from './SqlSchemaBuilder';
 import { hasDirective } from './util/ast-util';
 import { compare } from './util/compare';
 import { mkdir } from './util/fs-util';
@@ -86,7 +97,9 @@ export class FieldVisitorWriter {
 
     // TODO: generate visitors for union, connection-only, and SQL object types
     for (const tableMapping of this.sqlMappings.tables) {
-      await this.writeVisitor(tableMapping);
+      if (isTypeTableMapping(tableMapping)) {
+        await this.writeVisitor(tableMapping);
+      }
     }
 
     const indexFile = this.getSourcePath('index');
@@ -99,7 +112,7 @@ export class FieldVisitorWriter {
     return files;
   }
 
-  private async writeVisitor(tableMapping: TypeTable): Promise<void> {
+  private async writeVisitor(tableMapping: TypeTableMapping): Promise<void> {
     const { type } = tableMapping;
     const isEdgeType = this.analyzer.isEdgeType(type);
     let fields = Object.values(type.getFields());
@@ -230,7 +243,7 @@ export class FieldVisitorWriter {
           );
         }
 
-        // order by primary key by default, though it will usual need to be changed
+        // order by primary key by default, though it will usually need to be changed
         const toTable = fieldMapping.toTable.table;
         for (const part of toTable.primaryKey.parts) {
           configStatements.push(
@@ -248,7 +261,7 @@ export class FieldVisitorWriter {
             ts.createCall(
               ts.createPropertyAccess(
                 ts.createCall(
-                  ts.createPropertyAccess(ts.createIdentifier(this.config.contextArgName), 'addConnection'),
+                  ts.createPropertyAccess(ts.createIdentifier(this.config.contextArgName), 'addConnectionField'),
                   undefined,
                   callParams
                 ),
@@ -270,7 +283,6 @@ export class FieldVisitorWriter {
           )
         );
       } else if (isCompositeType(fieldType)) {
-        const fieldTypeInfo = this.analyzer.getTypeInfo(fieldType);
         if (!fieldMapping) {
           throw new Error(`No field mapping for composite field "${type.name}.${field.name}"`);
         }
@@ -284,6 +296,7 @@ export class FieldVisitorWriter {
         } else {
           let fieldTableType;
           if (isUnionType(fieldType)) {
+            const fieldTypeInfo = this.analyzer.getTypeInfo(fieldType);
             if (fieldTypeInfo.identityTypeInfo) {
               fieldTableType = fieldTypeInfo.identityTypeInfo.type;
             } else if (fieldTypeInfo.tableIds) {
@@ -298,7 +311,7 @@ export class FieldVisitorWriter {
             fieldTableType = fieldType;
           }
           if (fieldTableType) {
-            const joinSpec = this.getColumnsJoinSpec(fieldTableType, tableMapping, fieldMapping);
+            const joinSpec = this.getColumnsJoinSpec(fieldTableType, tableMapping.table, fieldMapping.columns);
             if (joinSpec) {
               resultExpr = this.addObjectField(joinSpec);
               configType = fieldTableType;
@@ -321,6 +334,43 @@ export class FieldVisitorWriter {
           resultExpr = ts.createCall(configId, undefined, [resultExpr!]);
         }
         body.push(ts.createReturn(resultExpr!));
+      } else if (isListType(fieldType)) {
+        if (!fieldMapping) {
+          throw new Error(`No mapping for list field "${type.name}.${field.name}"`);
+        }
+        if (!isJoin(fieldMapping)) {
+          throw new Error(`Join mapping expected for list field "${type.name}.${field.name}"`);
+        }
+        const contextId = ts.createIdentifier(this.config.contextArgName);
+        const infoId = ts.createIdentifier(this.config.infoArgName);
+        const joinSpec = this.getJoinSpec(tableMapping, fieldMapping);
+        let methodName;
+        const params: ts.Expression[] = [ts.createPropertyAccess(infoId, 'fieldName'), joinSpec];
+        const elementType = getNullableType<GraphQLOutputType>(fieldType.ofType);
+        if (isScalarType(elementType) || isEnumType(elementType)) {
+          methodName = 'addColumnListField';
+          params.push(ts.createStringLiteral(fieldMapping.listColumns![0].name));
+        } else if (isTableType(elementType)) {
+          methodName = 'addObjectListField';
+        } else {
+          throw new Error(
+            `Unsupported element type "${elementType.toString()}" for list field "${type.name}.${field.name}"`
+          );
+        }
+        let resolver = ts.createCall(ts.createPropertyAccess(contextId, methodName), undefined, params);
+        const orderColumns = fieldMapping.sequenceColumn ? [fieldMapping.sequenceColumn] : fieldMapping.listColumns!;
+        for (const orderColumn of orderColumns) {
+          resolver = ts.createCall(ts.createPropertyAccess(resolver, 'addOrderBy'), undefined, [
+            ts.createStringLiteral(orderColumn.name)
+          ]);
+        }
+        if (isTableType(elementType) && fieldMapping.listColumns) {
+          const joinSpec = this.getColumnsJoinSpec(elementType, fieldMapping.toTable.table, fieldMapping.listColumns);
+          if (joinSpec) {
+            resolver = ts.createCall(ts.createPropertyAccess(resolver, 'addTable'), undefined, [joinSpec]);
+          }
+        }
+        body.push(ts.createReturn(resolver));
       }
 
       properties.push(
@@ -439,7 +489,7 @@ export class FieldVisitorWriter {
     this.addVisitor(kind, { id: type.name, path: sourcePath });
   }
 
-  private getJoinSpec(fromTableMapping: TypeTable, fieldMapping: FieldJoin): ts.Expression {
+  private getJoinSpec(fromTableMapping: TypeTableMapping, fieldMapping: FieldJoin): ts.Expression {
     const fromTypeInfo = this.analyzer.getTypeInfo(fromTableMapping.type);
     const fromIdMapping =
       !fromTypeInfo.hasIdentity && fromTypeInfo.identityTypeInfo
@@ -465,38 +515,24 @@ export class FieldVisitorWriter {
         fromColumns.length
       ).map(p => p.column);
     }
-    return this.buildJoinSpec(
-      fieldMapping.toTable.table,
-      fieldMapping.toTable.type,
-      toColumns,
-      fromTableMapping.table,
-      fromTableMapping.type,
-      fromColumns
-    );
+    return this.buildJoinSpec(fieldMapping.toTable.table, toColumns, fromTableMapping.table, fromColumns);
   }
 
   private getNodeJoinSpec(fieldMapping: FieldJoin): ts.Expression {
-    const { table, type } = fieldMapping.nodeTable!;
+    const { table } = fieldMapping.nodeTable!;
     const toColumns = table.primaryKey.parts.map(p => p.column);
     const fromColumns = sliceFirstLast(
       fieldMapping.toTable.table.primaryKey.parts,
       !fieldMapping.pkPrefix,
       toColumns.length
     ).map(p => p.column);
-    return this.buildJoinSpec(
-      table,
-      type,
-      toColumns,
-      fieldMapping.toTable.table,
-      fieldMapping.toTable.type,
-      fromColumns
-    );
+    return this.buildJoinSpec(table, toColumns, fieldMapping.toTable.table, fromColumns);
   }
 
   private getColumnsJoinSpec(
     toType: TableType,
-    fromMapping: TypeTable,
-    fieldMapping: FieldColumns,
+    fromTable: SqlTable,
+    fromColumns: SqlColumn[],
     includeTypeName?: boolean
   ): ts.Expression | null {
     const toTableMapping = this.sqlMappings.getIdentityTableForType(toType);
@@ -506,23 +542,21 @@ export class FieldVisitorWriter {
     const { table } = toTableMapping;
     return this.buildJoinSpec(
       table,
-      toType,
       table.primaryKey.parts.map(p => p.column),
-      fromMapping.table,
-      fromMapping.type,
-      fieldMapping.columns,
+      fromTable,
+      fromColumns,
       includeTypeName ? toType.name : undefined
     );
   }
 
   private getUnionJoinSpecs(
     toTypes: Iterable<TableType>,
-    fromMapping: TypeTable,
+    fromMapping: TableMapping,
     fieldMapping: FieldColumns
   ): ts.Expression[] {
     const joinSpecs = [];
     for (const toType of toTypes) {
-      const joinSpec = this.getColumnsJoinSpec(toType, fromMapping, fieldMapping, true);
+      const joinSpec = this.getColumnsJoinSpec(toType, fromMapping.table, fieldMapping.columns, true);
       if (!joinSpec) {
         throw new Error(`Table mapping not found for union member "${toType.name}"`);
       }
@@ -533,10 +567,8 @@ export class FieldVisitorWriter {
 
   private buildJoinSpec(
     toTable: SqlTable,
-    toType: TableType,
     toColumns: SqlColumn[],
     fromTable: SqlTable,
-    fromType: TableType,
     fromColumns: SqlColumn[],
     typeName?: string
   ): ts.Expression {
@@ -545,17 +577,17 @@ export class FieldVisitorWriter {
       params.push(ts.createPropertyAssignment('typeName', ts.createStringLiteral(typeName)));
     }
     params.push(ts.createPropertyAssignment('toTable', ts.createStringLiteral(toTable.name)));
-    this.addJoinSpecColumns(params, 'to', toColumns, fromType);
+    this.addJoinSpecColumns(params, 'to', toColumns, fromTable);
     params.push(ts.createPropertyAssignment('fromTable', ts.createStringLiteral(fromTable.name)));
-    this.addJoinSpecColumns(params, 'from', fromColumns, toType);
-    return ts.createObjectLiteral(params);
+    this.addJoinSpecColumns(params, 'from', fromColumns, toTable);
+    return ts.createObjectLiteral(params, true);
   }
 
   private addJoinSpecColumns(
     params: ts.PropertyAssignment[],
     fromOrTo: 'from' | 'to',
     columns: SqlColumn[],
-    idType: TableType
+    targetTable: SqlTable
   ): void {
     const discriminatorIndex = columns.findIndex(column => column.discriminator);
     let discriminatorColumn = null;
@@ -572,9 +604,8 @@ export class FieldVisitorWriter {
     );
 
     if (discriminatorColumn) {
-      const tableId = this.analyzer.getTableId(idType);
-      if (!tableId) {
-        throw new Error(`Table ID expected for ${idType.name}`);
+      if (!targetTable.discriminatorValue) {
+        throw new Error(`Table ID expected for ${targetTable.name}`);
       }
       params.push(
         ts.createPropertyAssignment(
@@ -582,7 +613,7 @@ export class FieldVisitorWriter {
           ts.createArrayLiteral([
             ts.createObjectLiteral([
               ts.createPropertyAssignment('column', ts.createStringLiteral(discriminatorColumn.name)),
-              ts.createPropertyAssignment('value', ts.createStringLiteral(tableId))
+              ts.createPropertyAssignment('value', ts.createStringLiteral(targetTable.discriminatorValue))
             ])
           ])
         )
@@ -590,7 +621,7 @@ export class FieldVisitorWriter {
     }
   }
 
-  private getFieldColumns(fields: FieldType[], tableMapping: TypeTable): SqlColumn[] {
+  private getFieldColumns(fields: FieldType[], tableMapping: TableMapping): SqlColumn[] {
     const { fieldMappings, table } = tableMapping;
     return fields.flatMap(field => {
       const fieldMapping = fieldMappings.get(field);

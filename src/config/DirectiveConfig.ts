@@ -24,8 +24,10 @@ export interface DirectiveConfig {
   sqlTableDirective: string;
   sqlTypeDirective: string;
   sqlValueDirective: string;
+  sqlValuesDirective: string;
   typeDiscriminatorDirective: string;
   uniqueDirective: string;
+  unorderedDirective: string;
   updatedAtDirective: string;
   updateDirective: string;
   updateNestedDirective: string;
@@ -60,8 +62,10 @@ export const defaultConfig: DirectiveConfig = {
   sqlTableDirective: 'sqlTable',
   sqlTypeDirective: 'sqlType',
   sqlValueDirective: 'sqlValue',
+  sqlValuesDirective: 'sqlValues',
   typeDiscriminatorDirective: 'typeDiscriminator',
   uniqueDirective: 'unique',
+  unorderedDirective: 'unordered',
   updatedAtDirective: 'updatedAt',
   updateDirective: 'update',
   updateNestedDirective: 'updateNested',

@@ -29,7 +29,7 @@ import { Analyzer, FieldType, isTableType, TableType, TableTypeInfo, TypeInfo } 
 import { defaultConfig as defaultPathConfig, defaultConfig as defaultSqlConfig, SqlConfig } from './config/SqlConfig';
 import { SqlColumn } from './model/SqlColumn';
 import { CLIENT_MUTATION_ID, DELETED_FLAG } from './MutationBuilder';
-import { FieldColumns, isColumns, SqlSchemaMappings, TypeTable } from './SqlSchemaBuilder';
+import { FieldColumns, isColumns, SqlSchemaMappings, TypeTableMapping } from './SqlSchemaBuilder';
 import {
   findFirstDirective,
   getDirectiveArgument,
@@ -288,7 +288,11 @@ export class SqlResolverWriter {
       };
 
       const block = module.newBlock();
-      const fieldType = getNamedType(field.type);
+      let fieldType = getNullableType(field.type);
+      let isList;
+      if ((isList = isListType(fieldType))) {
+        fieldType = getNullableType(fieldType.ofType);
+      }
       let inputType;
       let targetTypeInfo;
       if (
@@ -318,12 +322,12 @@ export class SqlResolverWriter {
             console.log(`TODO: No table mapping for node type ${nodeType.name}`);
           }
         } else {
-          console.log(`TODO: Unhandled node type ${fieldType.name}`);
+          console.log(`TODO: Unhandled node type ${fieldType.toString()}`);
         }
       } else if (isTableType(fieldType)) {
         const tableMapping = this.sqlMappings.getIdentityTableForType(fieldType);
         if (tableMapping) {
-          const { configBlock, resolverId, lookupExpr } = this.buildLookupResolver(block, tableMapping, resolverNodes);
+          const { configBlock, resolverId, lookupExpr } = this.buildQueryResolver(block, tableMapping, isList, resolverNodes);
 
           // add a placeholder for building query based on arguments
           const configStmt = ts.createExpressionStatement(
@@ -342,7 +346,7 @@ export class SqlResolverWriter {
           console.log(`TODO: No table mapping for ${fieldType.name}`);
         }
       } else {
-        console.log(`TODO: Unhandled type ${fieldType.name}`);
+        console.log(`TODO: Unhandled type ${fieldType.toString()}`);
       }
       if (block.isEmpty()) {
         block.addStatement(
@@ -421,13 +425,14 @@ export class SqlResolverWriter {
   private returnUpsertQuery(
     block: TsBlock,
     resolverNodes: ResolverNodes,
-    identityTableMapping: TypeTable,
+    identityTableMapping: TypeTableMapping,
     targetType: TableType,
     idExprs: ts.Expression[]
   ): void {
-    const { configBlock, resolverId, lookupExpr } = this.buildLookupResolver(
+    const { configBlock, resolverId, lookupExpr } = this.buildQueryResolver(
       block,
       identityTableMapping,
+      false,
       resolverNodes
     );
     configBlock.addStatement(
@@ -750,7 +755,7 @@ export class SqlResolverWriter {
   private idLookup(
     targetTypeInfo: TableTypeInfo,
     identityTypeInfo: TableTypeInfo,
-    identityTableMapping: TypeTable,
+    identityTableMapping: TypeTableMapping,
     inputType: GraphQLInputObjectType,
     block: TsBlock,
     trxNodes: ResolverTransactionNodes,
@@ -862,7 +867,7 @@ export class SqlResolverWriter {
 
   private addIdLookup(
     identityTypeInfo: TableTypeInfo,
-    identityTableMapping: TypeTable,
+    identityTableMapping: TypeTableMapping,
     inputType: GraphQLInputObjectType,
     qeb: QueryExpressionBuilder,
     block: TsBlock,
@@ -1002,7 +1007,7 @@ export class SqlResolverWriter {
     throw new Error(`Unsupported type "${type.toString()}" for field "${parentType.name}.${field.name}"`);
   }
 
-  private getFieldColumns(tableMapping: TypeTable, field: FieldType, kind: string): FieldColumns {
+  private getFieldColumns(tableMapping: TypeTableMapping, field: FieldType, kind: string): FieldColumns {
     const fieldMapping = tableMapping.fieldMappings.get(field);
     if (!fieldMapping) {
       throw new Error(`No column mapping for ${kind} field "${tableMapping.type.name}.${field.name}"`);
@@ -1018,7 +1023,7 @@ export class SqlResolverWriter {
     resolverNodes: ResolverNodes,
     inputType: GraphQLInputObjectType,
     targetTypeInfo: TableTypeInfo
-  ): { idExprs: ts.Identifier[]; identityTableMapping: TypeTable } {
+  ): { idExprs: ts.Identifier[]; identityTableMapping: TypeTableMapping } {
     const { identityTypeInfo = targetTypeInfo } = targetTypeInfo;
     const identityTableMapping = this.sqlMappings.getIdentityTableForType(identityTypeInfo.type);
     if (!identityTableMapping) {
@@ -1115,7 +1120,7 @@ export class SqlResolverWriter {
     resolverNodes: ResolverNodes,
     inputType: GraphQLInputObjectType,
     targetTypeInfo: TableTypeInfo
-  ): { idExprs: ts.Identifier[]; identityTableMapping: TypeTable } {
+  ): { idExprs: ts.Identifier[]; identityTableMapping: TypeTableMapping } {
     const { identityTypeInfo = targetTypeInfo } = targetTypeInfo;
     const identityTableMapping = this.sqlMappings.getIdentityTableForType(identityTypeInfo.type);
     if (!identityTableMapping) {
@@ -1231,7 +1236,7 @@ export class SqlResolverWriter {
   }
 
   private getUpdateExpression(
-    tableMapping: TypeTable,
+    tableMapping: TypeTableMapping,
     trxExpr: ts.Expression,
     idExprs: ts.Expression[],
     props: ts.Expression
@@ -1245,7 +1250,7 @@ export class SqlResolverWriter {
   }
 
   private getWhereExpression(
-    tableMapping: TypeTable,
+    tableMapping: TypeTableMapping,
     queryExpr: ts.Expression,
     idExprs: ts.Expression[],
     resolverExpr?: ts.Expression
@@ -1278,7 +1283,7 @@ export class SqlResolverWriter {
     return ts.createCall(ts.createPropertyAccess(gqlsqlId, 'hasDefinedValue'), undefined, [updateExpr]);
   }
 
-  private getInputFieldMappings(inputType: GraphQLInputObjectType, tableMapping: TypeTable): InputFieldMapping[] {
+  private getInputFieldMappings(inputType: GraphQLInputObjectType, tableMapping: TypeTableMapping): InputFieldMapping[] {
     const result: InputFieldMapping[] = [];
     for (const inputField of Object.values(inputType.getFields())) {
       const targetField = this.findTargetField(inputField, tableMapping.type);
@@ -1467,7 +1472,7 @@ export class SqlResolverWriter {
   private getTypeDiscriminatorColumnAndValue(
     typeDiscriminatorField: FieldType,
     targetType: GraphQLNamedType,
-    identityTableMapping: TypeTable,
+    identityTableMapping: TypeTableMapping,
     module: TsModule
   ): [string, ts.Expression] {
     const fieldMapping = this.getFieldColumns(identityTableMapping, typeDiscriminatorField, 'type discriminator');
@@ -1497,7 +1502,7 @@ export class SqlResolverWriter {
 
   private buildConnectionResolver(
     block: TsBlock,
-    tableMapping: TypeTable,
+    tableMapping: TypeTableMapping,
     { argsId, contextId, infoId, returnType }: ResolverNodes
   ): void {
     const { table, type } = tableMapping;
@@ -1556,9 +1561,10 @@ export class SqlResolverWriter {
     );
   }
 
-  private buildLookupResolver(
+  private buildQueryResolver(
     block: TsBlock,
-    tableMapping: TypeTable,
+    tableMapping: TypeTableMapping,
+    isList: boolean,
     { contextId, infoId }: ResolverNodes
   ): { configBlock: TsBlock; resolverId: ts.Identifier; lookupExpr: ts.Expression } {
     const { table, type } = tableMapping;
@@ -1591,7 +1597,7 @@ export class SqlResolverWriter {
           undefined,
           [infoId, this.createArrowFunction([this.createSimpleParameter(resolverId)], configBlock.toBlock())]
         ),
-        'executeLookup'
+        isList ? 'execute' : 'executeLookup'
       ),
       undefined,
       []

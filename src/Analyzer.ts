@@ -850,6 +850,14 @@ export class Analyzer {
     let maxLength = 0;
     let minIntValue = Infinity;
     let maxIntValue = -Infinity;
+    let transform: string | null = null;
+    const valuesDir = findFirstDirective(typeInfo.type, this.config.sqlValuesDirective);
+    if (valuesDir != null) {
+      const transformArg = getDirectiveArgument(valuesDir, 'transform');
+      if (transformArg != null) {
+        transform = (transformArg.value as StringValueNode).value;
+      }
+    }
     for (const value of typeInfo.type.getValues()) {
       const valueDir = findFirstDirective(value, this.config.sqlValueDirective);
       let sqlValue = value.name;
@@ -870,6 +878,11 @@ export class Analyzer {
           }
         } else if (stringArg != null) {
           sqlValue = (stringArg.value as StringValueNode).value;
+        }
+      } else if (transform != null) {
+        switch (transform) {
+          case 'LOWERCASE':
+            sqlValue = sqlValue.toLowerCase();
         }
       }
       maxLength = Math.max(maxLength, sqlValue.length);

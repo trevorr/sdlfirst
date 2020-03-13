@@ -13,6 +13,8 @@ export interface SqlTable {
   primaryKey: SqlKey;
   keys: SqlKey[];
   options?: SqlTableOptions;
+  // internal use:
+  discriminatorValue?: string;
 }
 
 export function formatTable(table: SqlTable): string {

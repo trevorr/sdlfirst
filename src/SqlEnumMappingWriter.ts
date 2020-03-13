@@ -56,7 +56,7 @@ export class SqlEnumMappingWriter {
     const { baseDir, enumMappingsDir } = this.config;
     await mkdir(path.join(baseDir, enumMappingsDir), { recursive: true });
     for (const type of Object.values(this.schema.getTypeMap())) {
-      if (isEnumType(type) && !type.name.startsWith('__')) {
+      if (isEnumType(type) && !type.name.startsWith('__') && type.name !== 'SqlValueTransform') {
         const outputFile = await this.createEnumMappingModule(type);
         if (outputFile) {
           files.push(outputFile);
