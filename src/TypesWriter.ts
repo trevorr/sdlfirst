@@ -16,7 +16,7 @@ export const defaultConfig: TypesWriterConfig = {
     DateTime: 'Date',
     JSON: 'any',
     Time: 'Date',
-    URI: 'URL'
+    URI: 'string'
   }
 };
 
