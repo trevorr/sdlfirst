@@ -4,6 +4,7 @@ import {
   assertScalarType,
   buildASTSchema,
   DirectiveNode,
+  getNamedType,
   getNullableType,
   GraphQLBoolean,
   GraphQLCompositeType,
@@ -34,6 +35,7 @@ import {
   isScalarType,
   isUnionType,
   ListTypeNode,
+  ListValueNode,
   NamedTypeNode,
   NameNode,
   NonNullTypeNode,
@@ -44,12 +46,12 @@ import {
 import path from 'path';
 import { plural, singular } from 'pluralize';
 import { Memoize } from 'typescript-memoize';
-import { Analyzer, TypeInfo } from './Analyzer';
+import { Analyzer, isConnectionFieldInfo, TableTypeInfo, TypeInfo } from './Analyzer';
 import { DirectiveConfig } from './config/DirectiveConfig';
-import { findFirstDirective, getDirectiveArgument, hasDirectives } from './util/ast-util';
+import { findFirstDirective, getDirectiveArgument, getRequiredDirectiveArgument, hasDirectives } from './util/ast-util';
 import { lcFirst, transformCamelCaseLast, ucFirst } from './util/case';
 import { compare } from './util/compare';
-import { unwrapType, wrapType } from './util/graphql-util';
+import { unwrapType, WrapperType, wrapType } from './util/graphql-util';
 
 type FieldType = GraphQLField<any, any>;
 
@@ -69,6 +71,7 @@ export class MutationBuilder {
   private readonly createTypes: Map<GraphQLObjectType, GraphQLInputObjectType | null> = new Map();
   private readonly updateTypes: Map<GraphQLObjectType, GraphQLInputObjectType | null> = new Map();
   private readonly deleteTypes: Map<GraphQLObjectType, GraphQLInputObjectType | null> = new Map();
+  private readonly nestedTypes: Map<string, GraphQLInputObjectType | null> = new Map();
 
   constructor(private readonly schema: GraphQLSchema, private readonly analyzer: Analyzer) {
     this.config = analyzer.getConfig();
@@ -208,9 +211,13 @@ export class MutationBuilder {
     const existingType = this.schema.getType(name);
     if (existingType) {
       if (!isInputObjectType(existingType)) {
-        throw new Error(`Generated input type ${name} conflicts with existing type`);
+        throw new Error(`Generated input type ${name} conflicts with existing non-input type`);
       }
       return existingType;
+    }
+    if (nested) {
+      const existingInput = this.nestedTypes.get(name);
+      if (existingInput) return existingInput;
     }
 
     const fields = Object.values(type.getFields()).flatMap(field => this.getCreateInputFields(field, type, baseName));
@@ -221,7 +228,7 @@ export class MutationBuilder {
     }
 
     const description = `Automatically generated input type for ${this.mutationTypeName}.create${type.name}`;
-    return new GraphQLInputObjectType({
+    const result = new GraphQLInputObjectType({
       name,
       description,
       fields: Object.fromEntries(fields),
@@ -236,6 +243,10 @@ export class MutationBuilder {
         fields: fields.map(f => f[1].astNode!)
       }
     });
+    if (nested) {
+      this.nestedTypes.set(name, result);
+    }
+    return result;
   }
 
   private getCreateInputFields(
@@ -243,7 +254,7 @@ export class MutationBuilder {
     parentType: GraphQLObjectType,
     baseName: string
   ): [string, GraphQLInputFieldConfig][] {
-    if (hasDirectives(field, this.getReadonlyDirectives())) {
+    if (hasDirectives(field, this.getNoCreateDirectives())) {
       return [];
     }
 
@@ -254,19 +265,35 @@ export class MutationBuilder {
       nonNull = !hasDirectives(field, this.getDefaultDirectives());
     }
     const wrapped = unwrapType(type);
-    const namedType = wrapped.type;
-    const isList = wrapped.wrappers.length > 0;
+    let namedType = wrapped.type;
+    let isList = wrapped.wrappers.length > 0;
 
-    if (this.analyzer.isConnectionType(type)) {
-      // TODO: revisit?
-      return [];
+    const createDir = findFirstDirective(field, this.config.createNestedDirective);
+    const fieldInfo = this.analyzer.findFieldInfo(field);
+    if (fieldInfo && isConnectionFieldInfo(fieldInfo)) {
+      const { edgeTypeInfo } = fieldInfo;
+      const { nodeType } = edgeTypeInfo;
+      if (
+        (fieldInfo.nodeBackrefField && !createDir) ||
+        fieldInfo.nodeBackrefJoin ||
+        !nodeType ||
+        !this.isInputNodeType(nodeType) ||
+        this.hasRequiredEdgeFields(edgeTypeInfo)
+      ) {
+        return [];
+      }
+      nonNull = false;
+      namedType = getNamedType(nodeType);
+      isList = true;
+      wrapped.wrappers = [WrapperType.NON_NULL, WrapperType.LIST];
+      console.log(`Create ${parentType.name}.${field.name} (${baseName}): list of ${namedType}`);
     }
 
     let inputType;
     let inputDir;
-    const createDir = findFirstDirective(field, this.config.createNestedDirective);
     if (createDir) {
       const inputArg = getDirectiveArgument(createDir, 'input');
+      const thisArg = getDirectiveArgument(createDir, 'this');
       if (inputArg) {
         const inputTypeName = (inputArg.value as StringValueNode).value;
         inputType = this.schema.getType(inputTypeName);
@@ -276,30 +303,37 @@ export class MutationBuilder {
         if (!isInputType(inputType)) {
           throw new Error(`Invalid input type "${inputTypeName}" for field "${parentType.name}.${field.name}"`);
         }
-      } else {
-        const thisArg = getDirectiveArgument(createDir, 'this');
-        if (thisArg) {
-          const thisFieldName = (thisArg.value as StringValueNode).value;
-          if (!isObjectType(namedType)) {
-            throw new Error(
-              `Object type required for field "${parentType.name}.${field.name}" with @${this.config.createNestedDirective}.this`
-            );
-          }
-          const nestedName = baseName + ucFirst(field.name);
-          const fields = Object.values(namedType.getFields())
-            .filter(f => f.name !== thisFieldName)
-            .map(f => this.getCreateInputFields(f, namedType, nestedName))
-            .filter(notNull);
-          if (!fields.length) {
-            throw new Error(
-              `No nested fields found for field "${parentType.name}.${field.name}" with @${this.config.createNestedDirective}.this`
-            );
-          }
-          inputType = new GraphQLInputObjectType({
-            name: `Create${nestedName}Input`,
-            fields: Object.fromEntries(fields)
-          });
+      } else if (thisArg) {
+        const thisFieldName = (thisArg.value as StringValueNode).value;
+        if (!isObjectType(namedType)) {
+          throw new Error(
+            `Object type required for field "${parentType.name}.${field.name}" with @${this.config.createNestedDirective}.this`
+          );
         }
+        const excludeArg = getDirectiveArgument(createDir, 'exclude');
+        const excludeSet = new Set<string>(
+          excludeArg ? (excludeArg.value as ListValueNode).values.map(v => (v as StringValueNode).value) : []
+        );
+        const objType = namedType;
+        const nestedName = baseName + ucFirst(field.name);
+        const fields = Object.values(objType.getFields())
+          .filter(f => f.name !== thisFieldName && !excludeSet.has(f.name))
+          .flatMap(f => this.getCreateInputFields(f, objType, nestedName));
+        if (!fields.length) {
+          throw new Error(
+            `No nested fields found for field "${parentType.name}.${field.name}" with @${this.config.createNestedDirective}.this`
+          );
+        }
+        const description = `Automatically generated input type for creation of ${parentType.name}.${field.name}`;
+        inputType = new GraphQLInputObjectType({
+          name: `Create${nestedName}Input`,
+          description,
+          fields: Object.fromEntries(fields)
+        });
+      } else {
+        throw new Error(
+          `\`input\` or \`this\` field required for @${this.config.createNestedDirective} on field "${parentType.name}.${field.name}"`
+        );
       }
     }
     if (!inputType) {
@@ -340,6 +374,24 @@ export class MutationBuilder {
     return [makeInputFieldConfigEntry(name, inputType, inputDir && [inputDir])];
   }
 
+  private isInputNodeType(type: GraphQLNullableType): boolean {
+    // allows lists of input types but not (nested) lists of object IDs
+    if (isInputType(type)) return true;
+    const typeInfo = this.analyzer.getTypeInfo(type);
+    return typeInfo.externalIdField != null;
+  }
+
+  private hasRequiredEdgeFields(edgeTypeInfo: TableTypeInfo): boolean {
+    if (edgeTypeInfo.extraEdgeFields) {
+      for (const field of edgeTypeInfo.extraEdgeFields) {
+        if (isNonNullType(field.type)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   private getUpdateType(type: GraphQLObjectType): GraphQLInputObjectType | null {
     let updateType = this.updateTypes.get(type);
     if (updateType === undefined) {
@@ -360,6 +412,10 @@ export class MutationBuilder {
       }
       return existingType;
     }
+    if (nested) {
+      const existingInput = this.nestedTypes.get(name);
+      if (existingInput) return existingInput;
+    }
 
     const fields = Object.values(type.getFields()).flatMap(field => this.getUpdateInputFields(field, type));
     if (!fields.length) return null;
@@ -370,7 +426,7 @@ export class MutationBuilder {
     }
 
     const description = `Automatically generated input type for ${this.mutationTypeName}.update${type.name}`;
-    return new GraphQLInputObjectType({
+    const result = new GraphQLInputObjectType({
       name,
       description,
       fields: Object.fromEntries(fields),
@@ -385,10 +441,14 @@ export class MutationBuilder {
         fields: fields.map(f => f[1].astNode!)
       }
     });
+    if (nested) {
+      this.nestedTypes.set(name, result);
+    }
+    return result;
   }
 
   private getUpdateInputFields(field: FieldType, parentType: GraphQLObjectType): [string, GraphQLInputFieldConfig][] {
-    if (hasDirectives(field, this.getImmutableDirectives())) {
+    if (hasDirectives(field, this.getNoUpdateDirectives())) {
       return [];
     }
 
@@ -397,28 +457,40 @@ export class MutationBuilder {
       type = type.ofType;
     }
     const wrapped = unwrapType(type);
-    const namedType = wrapped.type;
-    const isList = wrapped.wrappers.length > 0;
+    let namedType = wrapped.type;
+    let isList = wrapped.wrappers.length > 0;
 
-    if (this.analyzer.isConnectionType(namedType)) {
-      // TODO: revisit?
-      return [];
+    const updateDir = findFirstDirective(field, this.config.updateNestedDirective);
+    const fieldInfo = this.analyzer.findFieldInfo(field);
+    if (fieldInfo && isConnectionFieldInfo(fieldInfo)) {
+      const { edgeTypeInfo } = fieldInfo;
+      const { nodeType } = edgeTypeInfo;
+      if (
+        (fieldInfo.nodeBackrefField && !updateDir) ||
+        fieldInfo.nodeBackrefJoin ||
+        !nodeType ||
+        !this.isInputNodeType(nodeType) ||
+        this.hasRequiredEdgeFields(edgeTypeInfo)
+      ) {
+        return [];
+      }
+      namedType = getNamedType(nodeType);
+      isList = true;
+      wrapped.wrappers = [WrapperType.NON_NULL, WrapperType.LIST];
+      console.log(`Update ${parentType.name}.${field.name}: list of ${namedType}`);
     }
 
     let inputType;
     let inputDir;
-    const updateDir = findFirstDirective(field, this.config.updateNestedDirective);
     if (updateDir) {
-      const inputArg = getDirectiveArgument(updateDir, 'input');
-      if (inputArg) {
-        const inputTypeName = (inputArg.value as StringValueNode).value;
-        inputType = this.schema.getType(inputTypeName);
-        if (!inputType) {
-          throw new Error(`Cannot find input type "${inputTypeName}" for field "${parentType.name}.${field.name}"`);
-        }
-        if (!isInputType(inputType)) {
-          throw new Error(`Invalid input type "${inputTypeName}" for field "${parentType.name}.${field.name}"`);
-        }
+      const inputArg = getRequiredDirectiveArgument(updateDir, 'input', 'StringValue');
+      const inputTypeName = (inputArg.value as StringValueNode).value;
+      inputType = this.schema.getType(inputTypeName);
+      if (!inputType) {
+        throw new Error(`Cannot find input type "${inputTypeName}" for field "${parentType.name}.${field.name}"`);
+      }
+      if (!isInputType(inputType)) {
+        throw new Error(`Invalid input type "${inputTypeName}" for field "${parentType.name}.${field.name}"`);
       }
     }
     if (!inputType) {
@@ -644,7 +716,12 @@ export class MutationBuilder {
   }
 
   @Memoize()
-  private getImmutableDirectives(): Set<string> {
+  private getNoCreateDirectives(): Set<string> {
+    return new Set(Array.from(this.getReadonlyDirectives()).concat(this.config.updateOnlyDirective));
+  }
+
+  @Memoize()
+  private getNoUpdateDirectives(): Set<string> {
     return new Set(
       Array.from(this.getReadonlyDirectives()).concat(
         this.config.immutableDirective,
@@ -658,10 +735,6 @@ export class MutationBuilder {
   private getDefaultDirectives(): Set<string> {
     return new Set([this.config.defaultDirective, this.config.generatedDefaultDirective]);
   }
-}
-
-function notNull<T>(t: T | null): t is T {
-  return t != null;
 }
 
 function toConfigEntries(f: FieldDesc[]): [string, GraphQLInputFieldConfig][] {

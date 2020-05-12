@@ -154,6 +154,14 @@ directive @default(value: String!) on FIELD_DEFINITION
 """Indicates that a (non-null) field has a system-provided default value and can be optionally specified on creation."""
 directive @generatedDefault on FIELD_DEFINITION
 
+"""
+Indicates that a field can be updated, but not specified on creation.
+Useful for fields referencing other objects that can only be created after the containing object.
+@useManyToMany fields tend to fall into either this category or @readonly.
+If the field is non-null and no @default is specified, @generatedDefault is implied.
+"""
+directive @updateOnly on FIELD_DEFINITION
+
 """Indicates that ordering is not significant or maintained for a list field."""
 directive @unordered on FIELD_DEFINITION
 
@@ -181,18 +189,27 @@ directive @delete (
   payload: String
 ) on OBJECT
 
-"""Specifies use of a nested input object (instead of an ID reference) for an object field in a generated create mutation."""
+"""
+Specifies use of a nested input object (instead of an ID reference) for an object field in a generated create mutation.
+(A nested object type without an identity is automatically created using a nested input object.)
+Either `input` or `this` is required.
+"""
 directive @createNested (
+  """Use the given type for the nested input object."""
+  input: String
   """Use a generated nested input object with the given field implicitly set to the containing object."""
   this: String
-  """Use the given type for the nested input object."""
-  input: String
+  """A list of fields to exclude from the generated nested input object."""
+  exclude: [String!]
 ) on FIELD_DEFINITION
 
-"""Specifies use of a nested input object (instead of an ID reference) for an object field in a generated update mutation."""
+"""
+Specifies use of a nested input object (instead of an ID reference) for an object field in a generated update mutation.
+(A nested object type without an identity is automatically updated using a nested input object.)
+"""
 directive @updateNested (
   """Use the given type for the nested input object."""
-  input: String
+  input: String!
 ) on FIELD_DEFINITION
 
 """Provides control over the database column generated for a field."""
@@ -288,6 +305,7 @@ If no relation directive is used on a connection field, and the edge type contai
 and the cursor, the default behavior is to look for a single field in the connection node type of the type containing the
 connection field with no required arguments. If such a field is found, it defines a one-to-many relation. Otherwise,
 a many-to-many relation is used based on a new table with a name derived from the connection edge type.
+One-to-many relation fields can only be specified on creation using @createNested and cannot be updated directly.
 """
 directive @oneToMany(
   """

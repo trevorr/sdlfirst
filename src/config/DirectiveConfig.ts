@@ -31,6 +31,7 @@ export interface DirectiveConfig {
   updatedAtDirective: string;
   updateDirective: string;
   updateNestedDirective: string;
+  updateOnlyDirective: string;
   useManyToManyDirective: string;
   wkidDirective: string;
   wkidRefDirective: string;
@@ -69,6 +70,7 @@ export const defaultConfig: DirectiveConfig = {
   updatedAtDirective: 'updatedAt',
   updateDirective: 'update',
   updateNestedDirective: 'updateNested',
+  updateOnlyDirective: 'updateOnly',
   useManyToManyDirective: 'useManyToMany',
   wkidDirective: 'wkid',
   wkidRefDirective: 'wkidRef'
