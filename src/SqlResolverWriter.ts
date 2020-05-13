@@ -9,6 +9,7 @@ import {
   GraphQLNamedType,
   GraphQLObjectType,
   GraphQLOutputType,
+  GraphQLScalarType,
   GraphQLSchema,
   IntValueNode,
   isCompositeType,
@@ -327,7 +328,12 @@ export class SqlResolverWriter {
       } else if (isTableType(fieldType)) {
         const tableMapping = this.sqlMappings.getIdentityTableForType(fieldType);
         if (tableMapping) {
-          const { configBlock, resolverId, lookupExpr } = this.buildQueryResolver(block, tableMapping, isList, resolverNodes);
+          const { configBlock, resolverId, lookupExpr } = this.buildQueryResolver(
+            block,
+            tableMapping,
+            isList,
+            resolverNodes
+          );
 
           // add a placeholder for building query based on arguments
           const configStmt = ts.createExpressionStatement(
@@ -557,24 +563,22 @@ export class SqlResolverWriter {
     block.declareConst(
       ts.createObjectBindingPattern(
         Object.values(inputType.getFields()).map(field => {
+          let binding = field.name;
           let idSuffix;
           if (hasDirectives(field, [this.config.wkidDirective, this.config.wkidRefDirective])) {
             idSuffix = this.config.wkidName;
           } else if (hasDirective(field, this.config.randomIdRefDirective)) {
             idSuffix = this.config.qualifiedIdName;
           }
+          let match;
           if (idSuffix) {
-            let binding;
             if (field.name === 'id') {
               binding = idSuffix;
-            } else if (field.name.endsWith('Id')) {
-              binding = addNamePrefix(field.name.substring(0, field.name.length - 2), idSuffix);
-            }
-            if (binding) {
-              return ts.createBindingElement(undefined, field.name, block.createIdentifier(binding, field));
+            } else if ((match = /^(.*)Id(s?)$/.exec(field.name))) {
+              binding = addNamePrefix(match[1], idSuffix + match[2]);
             }
           }
-          return block.createBindingElement(field.name, field);
+          return block.createBindingElement(field.name, binding, field);
         })
       ),
       undefined,
@@ -647,11 +651,7 @@ export class SqlResolverWriter {
   }
 
   private hasIdDirective(field: GraphQLInputField | FieldType): boolean {
-    return hasDirectives(field, [
-      this.config.idDirective,
-      this.config.randomIdDirective,
-      this.config.wkidDirective
-    ]);
+    return hasDirectives(field, [this.config.idDirective, this.config.randomIdDirective, this.config.wkidDirective]);
   }
 
   private validateInput(
@@ -662,94 +662,109 @@ export class SqlResolverWriter {
   ): void {
     const tsfvId = ts.createIdentifier(this.config.tsfvBinding);
     for (const field of Object.values(inputType.getFields())) {
-      const fieldType = getNullableType(field.type);
+      let fieldType = getNullableType(field.type);
       const optional = !isNonNullType(field.type);
+      const targetField = this.findTargetField(field, targetType);
       let expr: ts.Expression = tsfvId;
       if (isScalarType(fieldType)) {
-        const targetField = this.findTargetField(field, targetType) || field;
-        switch (fieldType.name) {
-          case 'ID':
-            const wkidDir =
-              findFirstDirective(field, this.config.wkidDirective) ||
-              findFirstDirective(field, this.config.wkidRefDirective);
-            expr = getRangeValidator(expr, wkidDir, 'string', {
-              betweenMethod: 'length',
-              equalMethod: 'length',
-              minMethod: 'minLength',
-              maxMethod: 'maxLength',
-              maxArgName: 'maxLength',
-              defaultMin: '1'
-            });
-            const ridDir = findFirstDirective(field, this.config.randomIdRefDirective);
-            if (ridDir) {
-              // rids should be /([A-Z]{1,4}_)?[0-9A-Za-z]{21}/
-              // but strict validation isn't necessary due to database lookup
-              expr = getRangeValidator(expr, ridDir, 'string', {
-                betweenMethod: 'length',
-                defaultMin: '21',
-                defaultMax: '26'
-              });
-            }
-            break;
-          case 'String':
-            const lengthDir = findFirstDirective(targetField, this.config.lengthDirective);
-            expr = getRangeValidator(expr, lengthDir, 'string', {
-              betweenMethod: 'length',
-              equalMethod: 'length',
-              minMethod: 'minLength',
-              maxMethod: 'maxLength',
-              defaultMin: '1'
-            });
-            const regexDir = findFirstDirective(targetField, this.config.regexDirective);
-            if (regexDir) {
-              const valueArg = getRequiredDirectiveArgument(regexDir, 'value', 'StringValue');
-              expr = ts.createCall(ts.createPropertyAccess(expr, 'pattern'), undefined, [
-                ts.createRegularExpressionLiteral('/' + (valueArg.value as StringValueNode).value + '/')
-              ]);
-            }
-            break;
-          case 'Float':
-            const floatRangeDir = findFirstDirective(targetField, this.config.floatRangeDirective);
-            expr = getRangeValidator(expr, floatRangeDir, 'number');
-            break;
-          case 'Int':
-            const intRangeDir = findFirstDirective(targetField, this.config.intRangeDirective);
-            expr = getRangeValidator(expr, intRangeDir, 'integer');
-            break;
+        expr = this.validateScalarField(field, fieldType, targetField, expr);
+      } else if (isListType(fieldType)) {
+        fieldType = getNullableType(fieldType.ofType);
+        if (isScalarType(fieldType)) {
+          expr = this.validateScalarField(field, fieldType, targetField, expr);
         }
         if (expr !== tsfvId) {
-          if (optional) {
-            expr = ts.createCall(ts.createPropertyAccess(expr, 'optional'), undefined, undefined);
-          }
-          block.addStatement(
-            ts.createExpressionStatement(
-              ts.createCall(ts.createPropertyAccess(expr, 'check'), undefined, [
-                getFieldRef(field),
-                ts.createStringLiteral(field.name)
-              ])
-            )
+          expr = ts.createCall(ts.createPropertyAccess(tsfvId, 'every'), undefined, [expr]);
+        }
+      } else if (isInputObjectType(fieldType) && targetField) {
+        const targetFieldType = getNullableType(targetField.type);
+        if (isTableType(targetFieldType)) {
+          const fieldRef = getFieldRef(field);
+          const targetBlock = optional ? block.newBlock() : block;
+          this.validateInput(targetBlock, fieldType, targetFieldType, field =>
+            ts.createPropertyAccess(fieldRef, block.createIdentifier(field.name, field))
           );
-        }
-      } else if (isInputObjectType(fieldType)) {
-        const targetField = this.findTargetField(field, targetType);
-        if (targetField) {
-          const targetType = getNullableType(targetField.type);
-          if (isTableType(targetType)) {
-            const fieldRef = getFieldRef(field);
-            const targetBlock = optional ? block.newBlock() : block;
-            this.validateInput(targetBlock, fieldType, targetType, field =>
-              ts.createPropertyAccess(fieldRef, block.createIdentifier(field.name, field))
-            );
-            if (optional) {
-              block.addStatement(ts.createIf(fieldRef, targetBlock.toBlock()));
-            }
+          if (optional) {
+            block.addStatement(ts.createIf(fieldRef, targetBlock.toBlock()));
           }
         }
+      }
+      if (expr !== tsfvId) {
+        if (optional) {
+          expr = ts.createCall(ts.createPropertyAccess(expr, 'optional'), undefined, undefined);
+        }
+        block.addStatement(
+          ts.createExpressionStatement(
+            ts.createCall(ts.createPropertyAccess(expr, 'check'), undefined, [
+              getFieldRef(field),
+              ts.createStringLiteral(field.name)
+            ])
+          )
+        );
       }
     }
     if (!block.isEmpty()) {
       block.module.addImport(this.config.tsfvModule, this.config.tsfvBinding);
     }
+  }
+
+  private validateScalarField(
+    field: GraphQLInputField,
+    fieldType: GraphQLScalarType,
+    targetField: FieldType | undefined,
+    expr: ts.Expression
+  ): ts.Expression {
+    switch (fieldType.name) {
+      case 'ID':
+        const wkidDir =
+          findFirstDirective(field, this.config.wkidDirective) ||
+          findFirstDirective(field, this.config.wkidRefDirective);
+        expr = getRangeValidator(expr, wkidDir, 'string', {
+          betweenMethod: 'length',
+          equalMethod: 'length',
+          minMethod: 'minLength',
+          maxMethod: 'maxLength',
+          maxArgName: 'maxLength',
+          defaultMin: '1'
+        });
+        const ridDir = findFirstDirective(field, this.config.randomIdRefDirective);
+        if (ridDir) {
+          // rids should be /([A-Z]{1,4}_)?[0-9A-Za-z]{21}/
+          // but strict validation isn't necessary due to database lookup
+          expr = getRangeValidator(expr, ridDir, 'string', {
+            betweenMethod: 'length',
+            defaultMin: '21',
+            defaultMax: '26'
+          });
+        }
+        break;
+      case 'String':
+        const lengthDir = findFirstDirective(targetField || field, this.config.lengthDirective);
+        expr = getRangeValidator(expr, lengthDir, 'string', {
+          betweenMethod: 'length',
+          equalMethod: 'length',
+          minMethod: 'minLength',
+          maxMethod: 'maxLength',
+          defaultMin: '1'
+        });
+        const regexDir = findFirstDirective(targetField || field, this.config.regexDirective);
+        if (regexDir) {
+          const valueArg = getRequiredDirectiveArgument(regexDir, 'value', 'StringValue');
+          expr = ts.createCall(ts.createPropertyAccess(expr, 'pattern'), undefined, [
+            ts.createRegularExpressionLiteral('/' + (valueArg.value as StringValueNode).value + '/')
+          ]);
+        }
+        break;
+      case 'Float':
+        const floatRangeDir = findFirstDirective(targetField || field, this.config.floatRangeDirective);
+        expr = getRangeValidator(expr, floatRangeDir, 'number');
+        break;
+      case 'Int':
+        const intRangeDir = findFirstDirective(targetField || field, this.config.intRangeDirective);
+        expr = getRangeValidator(expr, intRangeDir, 'integer');
+        break;
+    }
+    return expr;
   }
 
   private idLookup(
@@ -1283,7 +1298,10 @@ export class SqlResolverWriter {
     return ts.createCall(ts.createPropertyAccess(gqlsqlId, 'hasDefinedValue'), undefined, [updateExpr]);
   }
 
-  private getInputFieldMappings(inputType: GraphQLInputObjectType, tableMapping: TypeTableMapping): InputFieldMapping[] {
+  private getInputFieldMappings(
+    inputType: GraphQLInputObjectType,
+    tableMapping: TypeTableMapping
+  ): InputFieldMapping[] {
     const result: InputFieldMapping[] = [];
     for (const inputField of Object.values(inputType.getFields())) {
       const targetField = this.findTargetField(inputField, tableMapping.type);

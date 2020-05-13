@@ -89,9 +89,19 @@ export class TsNamer {
     return this.userIdMap.get(user) || (this.outerScope && this.outerScope.findIdentifierFor(user));
   }
 
-  public createBindingElement(name: string, user?: any, initializer?: ts.Expression): ts.BindingElement {
+  public createBindingElement(
+    propertyName: string,
+    name: string,
+    user?: any,
+    initializer?: ts.Expression
+  ): ts.BindingElement {
     const id = this.createIdentifier(name, user);
-    return ts.createBindingElement(undefined, ts.idText(id) !== name ? name : undefined, id, initializer);
+    return ts.createBindingElement(
+      undefined,
+      ts.idText(id) !== propertyName ? propertyName : undefined,
+      id,
+      initializer
+    );
   }
 
   public createIdPropertyAssignment(name: string, id?: ts.Identifier): ts.ObjectLiteralElementLike {

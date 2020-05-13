@@ -286,7 +286,6 @@ export class MutationBuilder {
       namedType = getNamedType(nodeType);
       isList = true;
       wrapped.wrappers = [WrapperType.NON_NULL, WrapperType.LIST];
-      console.log(`Create ${parentType.name}.${field.name} (${baseName}): list of ${namedType}`);
     }
 
     let inputType;
@@ -477,7 +476,6 @@ export class MutationBuilder {
       namedType = getNamedType(nodeType);
       isList = true;
       wrapped.wrappers = [WrapperType.NON_NULL, WrapperType.LIST];
-      console.log(`Update ${parentType.name}.${field.name}: list of ${namedType}`);
     }
 
     let inputType;
