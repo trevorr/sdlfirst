@@ -1,4 +1,11 @@
-import { GraphQLCompositeType, isCompositeType, isInterfaceType, isUnionType } from 'graphql';
+import {
+  GraphQLCompositeType,
+  GraphQLObjectType,
+  isCompositeType,
+  isInterfaceType,
+  isObjectType,
+  isUnionType
+} from 'graphql';
 import path from 'path';
 import ts from 'typescript';
 import { Analyzer, TableType, TypeInfo } from './Analyzer';
@@ -113,7 +120,25 @@ export class SqlMetadataWriter {
 
     propMap['typeName'] = ts.createStringLiteral(type.name);
 
-    let objectTypes;
+    // must use names instead of metadata references to avoid circular imports
+    let interfaceNames: string[] | null = null;
+    if (isObjectType(type)) {
+      interfaceNames = type.getInterfaces().map(intf => intf.name);
+    } else if (isUnionType(type)) {
+      const nameSet = new Set<string>();
+      for (const objType of type.getTypes()) {
+        objType.getInterfaces().forEach(intf => nameSet.add(intf.name));
+      }
+      interfaceNames = Array.from(nameSet);
+    }
+    if (interfaceNames && interfaceNames.length > 0) {
+      propMap['interfaceNames'] = ts.createArrayLiteral(
+        interfaceNames.sort().map(name => ts.createStringLiteral(name)),
+        true
+      );
+    }
+
+    let objectTypes: GraphQLObjectType[] | null = null;
     if (isInterfaceType(type)) {
       objectTypes = Array.from(this.analyzer.getImplementingTypes(type));
     } else if (isUnionType(type)) {
