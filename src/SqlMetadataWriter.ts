@@ -1,11 +1,4 @@
-import {
-  GraphQLCompositeType,
-  GraphQLObjectType,
-  isCompositeType,
-  isInterfaceType,
-  isObjectType,
-  isUnionType
-} from 'graphql';
+import { GraphQLCompositeType, GraphQLObjectType, isCompositeType, isInterfaceType, isUnionType } from 'graphql';
 import path from 'path';
 import ts from 'typescript';
 import { Analyzer, TableType, TypeInfo } from './Analyzer';
@@ -120,35 +113,38 @@ export class SqlMetadataWriter {
 
     propMap['typeName'] = ts.createStringLiteral(type.name);
 
-    // must use names instead of metadata references to avoid circular imports
-    let interfaceNames: string[] | null = null;
-    if (isObjectType(type)) {
-      interfaceNames = type.getInterfaces().map(intf => intf.name);
-    } else if (isUnionType(type)) {
-      const nameSet = new Set<string>();
-      for (const objType of type.getTypes()) {
-        objType.getInterfaces().forEach(intf => nameSet.add(intf.name));
-      }
-      interfaceNames = Array.from(nameSet);
-    }
-    if (interfaceNames && interfaceNames.length > 0) {
-      propMap['interfaceNames'] = ts.createArrayLiteral(
-        interfaceNames.sort().map(name => ts.createStringLiteral(name)),
-        true
-      );
-    }
-
-    let objectTypes: GraphQLObjectType[] | null = null;
+    let objectTypes: GraphQLObjectType[];
+    let includeObjectTypes: boolean;
     if (isInterfaceType(type)) {
       objectTypes = Array.from(this.analyzer.getImplementingTypes(type));
+      includeObjectTypes = objectTypes.length > 0;
     } else if (isUnionType(type)) {
       objectTypes = type.getTypes();
+      includeObjectTypes = true;
+    } else {
+      objectTypes = [type];
+      includeObjectTypes = false;
     }
-    if (objectTypes && objectTypes.length > 0) {
+    if (includeObjectTypes) {
       propMap['objectTypes'] = ts.createArrayLiteral(
         objectTypes
           .sort((a, b) => compare(a.name, b.name))
           .map(objectType => module.addImport(`./${objectType.name}`, objectType.name)),
+        true
+      );
+    }
+
+    // must use names instead of metadata references to avoid circular imports
+    const interfaceNames = new Set<string>();
+    for (const objType of objectTypes) {
+      objType.getInterfaces().forEach(intf => interfaceNames.add(intf.name));
+    }
+    interfaceNames.delete(type.name);
+    if (interfaceNames.size > 0) {
+      propMap['interfaceNames'] = ts.createArrayLiteral(
+        Array.from(interfaceNames)
+          .sort()
+          .map(name => ts.createStringLiteral(name)),
         true
       );
     }
