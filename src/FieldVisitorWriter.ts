@@ -75,7 +75,6 @@ export class FieldVisitorWriter {
   private readonly visitors: VisitorInfoByKind = {
     // ordered by frequency of use
     object: [],
-    union: [],
     edge: [],
     connection: [],
     pageInfo: []
