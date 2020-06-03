@@ -57,7 +57,7 @@
     "graphql-import": "github:trevorr/graphql-import#v0.7.1-enum-value-directive",
     "pascal-case": "^3.1.1",
     "pluralize": "^8.0.0",
-    "prettier": "^1.19.1",
+    "prettier": "^2.0.5",
     "snake-case": "^3.0.3",
     "tslib": "^1.10.0",
     "typescript": "^3.7.4",
