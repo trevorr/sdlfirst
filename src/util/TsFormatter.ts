@@ -6,7 +6,7 @@ export interface TsFormatterConfig {
 }
 
 export const defaultConfig: TsFormatterConfig = {
-  usePrettier: true
+  usePrettier: true,
 };
 
 export class TsFormatter {

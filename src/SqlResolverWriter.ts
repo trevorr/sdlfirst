@@ -21,7 +21,7 @@ import {
   isObjectType,
   isScalarType,
   isUnionType,
-  StringValueNode
+  StringValueNode,
 } from 'graphql';
 import { pascalCase } from 'pascal-case';
 import path from 'path';
@@ -36,7 +36,7 @@ import {
   getDirectiveArgument,
   getRequiredDirectiveArgument,
   hasDirective,
-  hasDirectives
+  hasDirectives,
 } from './util/ast-util';
 import { lcFirst, ucFirst } from './util/case';
 import { compare } from './util/compare';
@@ -105,7 +105,7 @@ export const defaultConfig: SqlResolverConfig = {
   contextArgName: 'context',
   contextResolverFactory: 'resolverFactory',
   infoArgName: 'info',
-  unusedArgPrefix: '_'
+  unusedArgPrefix: '_',
 };
 
 interface ResolverInfo {
@@ -115,7 +115,7 @@ interface ResolverInfo {
 
 enum RootType {
   Query = 1,
-  Mutation = 2
+  Mutation = 2,
 }
 
 interface ResolverNodes {
@@ -178,7 +178,7 @@ export class SqlResolverWriter {
     if (mutationType != null) {
       await this.writeResolver(mutationType, RootType.Mutation);
     }
-    const files = this.resolvers.map(r => r.path).concat(this.methodResolvers.map(r => r.path));
+    const files = this.resolvers.map((r) => r.path).concat(this.methodResolvers.map((r) => r.path));
     if (this.resolvers.length > 0) {
       const outputFile = this.getSourcePath('index');
       await this.createIndexModule(this.resolvers, false).write(outputFile, this.formatter);
@@ -278,14 +278,14 @@ export class SqlResolverWriter {
         this.createSimpleParameter(parentId, parentType),
         this.createSimpleParameter(argsId, argsType),
         this.createSimpleParameter(contextId, this.contextType),
-        this.createSimpleParameter(infoId, ts.createTypeReferenceNode(infoTypeId, undefined))
+        this.createSimpleParameter(infoId, ts.createTypeReferenceNode(infoTypeId, undefined)),
       ];
       const returnType = ts.createTypeReferenceNode(PromiseType, [await this.getFieldReturnType(field.type)]);
       const resolverNodes = {
         argsId,
         contextId,
         infoId,
-        returnType
+        returnType,
       };
 
       const block = module.newBlock();
@@ -358,7 +358,7 @@ export class SqlResolverWriter {
         block.addStatement(
           ts.createThrow(
             ts.createNew(ts.createIdentifier('Error'), undefined, [
-              ts.createStringLiteral(`TODO: implement resolver for ${type.name}.${field.name}`)
+              ts.createStringLiteral(`TODO: implement resolver for ${type.name}.${field.name}`),
             ])
           )
         );
@@ -462,7 +462,7 @@ export class SqlResolverWriter {
       ts.createReturn(
         ts.createObjectLiteral([
           block.createIdPropertyAssignment(CLIENT_MUTATION_ID, block.findIdentifier(CLIENT_MUTATION_ID)),
-          block.createIdPropertyAssignment(resultName, resultId)
+          block.createIdPropertyAssignment(resultName, resultId),
         ])
       )
     );
@@ -509,7 +509,7 @@ export class SqlResolverWriter {
     );
     if (softDeleteColumn && softDeleteValueExpr) {
       deleteExpr = ts.createCall(ts.createPropertyAccess(deleteExpr, 'update'), undefined, [
-        ts.createObjectLiteral([ts.createPropertyAssignment(softDeleteColumn, softDeleteValueExpr)])
+        ts.createObjectLiteral([ts.createPropertyAssignment(softDeleteColumn, softDeleteValueExpr)]),
       ]);
     } else {
       deleteExpr = ts.createCall(ts.createPropertyAccess(deleteExpr, 'del'), undefined, undefined);
@@ -538,7 +538,7 @@ export class SqlResolverWriter {
               undefined,
               undefined,
               trxBlock.toBlock()
-            )
+            ),
           ]
         )
       )
@@ -549,7 +549,7 @@ export class SqlResolverWriter {
       ts.createReturn(
         ts.createObjectLiteral([
           block.createIdPropertyAssignment(CLIENT_MUTATION_ID, block.findIdentifier(CLIENT_MUTATION_ID)),
-          block.createIdPropertyAssignment(DELETED_FLAG, deletedId)
+          block.createIdPropertyAssignment(DELETED_FLAG, deletedId),
         ])
       )
     );
@@ -562,7 +562,7 @@ export class SqlResolverWriter {
   private destructureInput(block: TsBlock, argsId: ts.Identifier, inputType: GraphQLInputObjectType): void {
     block.declareConst(
       ts.createObjectBindingPattern(
-        Object.values(inputType.getFields()).map(field => {
+        Object.values(inputType.getFields()).map((field) => {
           let binding = field.name;
           let idSuffix;
           if (hasDirectives(field, [this.config.wkidDirective, this.config.wkidRefDirective])) {
@@ -601,15 +601,15 @@ export class SqlResolverWriter {
       ts.createIf(
         ts.createLogicalNot(
           ts.createCall(ts.createPropertyAccess(gqlsqlId, 'hasDefinedElement'), undefined, [
-            ts.createArrayLiteral(this.listInputs(block, inputType, targetType))
+            ts.createArrayLiteral(this.listInputs(block, inputType, targetType)),
           ])
         ),
         ts.createBlock([
           ts.createThrow(
             ts.createNew(ts.createIdentifier('Error'), undefined, [
-              ts.createStringLiteral('Update must specify at least one field to modify')
+              ts.createStringLiteral('Update must specify at least one field to modify'),
             ])
-          )
+          ),
         ])
       )
     );
@@ -619,7 +619,7 @@ export class SqlResolverWriter {
     block: TsBlock,
     inputType: GraphQLInputObjectType,
     targetType: TableType,
-    getFieldRef: (field: GraphQLInputField) => ts.Expression = field => block.createIdentifier(field.name, field),
+    getFieldRef: (field: GraphQLInputField) => ts.Expression = (field) => block.createIdentifier(field.name, field),
     output: ts.Expression[] = []
   ): ts.Expression[] {
     for (const field of Object.values(inputType.getFields())) {
@@ -634,7 +634,7 @@ export class SqlResolverWriter {
             block,
             fieldType,
             targetType,
-            field =>
+            (field) =>
               ts.createPropertyAccessChain(
                 fieldRef,
                 ts.createToken(ts.SyntaxKind.QuestionDotToken),
@@ -658,7 +658,7 @@ export class SqlResolverWriter {
     block: TsBlock,
     inputType: GraphQLInputObjectType,
     targetType: TableType,
-    getFieldRef: (field: GraphQLInputField) => ts.Expression = field => block.createIdentifier(field.name, field)
+    getFieldRef: (field: GraphQLInputField) => ts.Expression = (field) => block.createIdentifier(field.name, field)
   ): void {
     const tsfvId = ts.createIdentifier(this.config.tsfvBinding);
     for (const field of Object.values(inputType.getFields())) {
@@ -681,7 +681,7 @@ export class SqlResolverWriter {
         if (isTableType(targetFieldType)) {
           const fieldRef = getFieldRef(field);
           const targetBlock = optional ? block.newBlock() : block;
-          this.validateInput(targetBlock, fieldType, targetFieldType, field =>
+          this.validateInput(targetBlock, fieldType, targetFieldType, (field) =>
             ts.createPropertyAccess(fieldRef, block.createIdentifier(field.name, field))
           );
           if (optional) {
@@ -697,7 +697,7 @@ export class SqlResolverWriter {
           ts.createExpressionStatement(
             ts.createCall(ts.createPropertyAccess(expr, 'check'), undefined, [
               getFieldRef(field),
-              ts.createStringLiteral(field.name)
+              ts.createStringLiteral(field.name),
             ])
           )
         );
@@ -725,7 +725,7 @@ export class SqlResolverWriter {
           minMethod: 'minLength',
           maxMethod: 'maxLength',
           maxArgName: 'maxLength',
-          defaultMin: '1'
+          defaultMin: '1',
         });
         const ridDir = findFirstDirective(field, this.config.randomIdRefDirective);
         if (ridDir) {
@@ -734,7 +734,7 @@ export class SqlResolverWriter {
           expr = getRangeValidator(expr, ridDir, 'string', {
             betweenMethod: 'length',
             defaultMin: '21',
-            defaultMax: '26'
+            defaultMax: '26',
           });
         }
         break;
@@ -745,13 +745,13 @@ export class SqlResolverWriter {
           equalMethod: 'length',
           minMethod: 'minLength',
           maxMethod: 'maxLength',
-          defaultMin: '1'
+          defaultMin: '1',
         });
         const regexDir = findFirstDirective(targetField || field, this.config.regexDirective);
         if (regexDir) {
           const valueArg = getRequiredDirectiveArgument(regexDir, 'value', 'StringValue');
           expr = ts.createCall(ts.createPropertyAccess(expr, 'pattern'), undefined, [
-            ts.createRegularExpressionLiteral('/' + (valueArg.value as StringValueNode).value + '/')
+            ts.createRegularExpressionLiteral('/' + (valueArg.value as StringValueNode).value + '/'),
           ]);
         }
         break;
@@ -937,7 +937,7 @@ export class SqlResolverWriter {
           undefined,
           ts.createCall(ts.createPropertyAccess(gqlsqlId, 'resolveQid'), undefined, [
             inputId,
-            ts.createPropertyAccess(this.getMetaImport(block.module), parentType.name)
+            ts.createPropertyAccess(this.getMetaImport(block.module), parentType.name),
           ])
         );
         qeb.where(column, ridId);
@@ -999,12 +999,12 @@ export class SqlResolverWriter {
           block.declareConst(
             ts.createArrayBindingPattern([
               ts.createBindingElement(undefined, undefined, ridId),
-              ts.createBindingElement(undefined, undefined, metaId)
+              ts.createBindingElement(undefined, undefined, metaId),
             ]),
             undefined,
             ts.createCall(ts.createPropertyAccess(gqlsqlId, 'resolveQid'), undefined, [
               inputId,
-              ts.createPropertyAccess(this.getMetaImport(block.module), type.name)
+              ts.createPropertyAccess(this.getMetaImport(block.module), type.name),
             ])
           );
           // .join(`${cMeta.tableName} as c`, { 'a.c_kind': context.knex.raw('?', [cMeta.tableId]), 'a.c_id': `c.${cMeta.idColumns[0]}` })
@@ -1087,10 +1087,10 @@ export class SqlResolverWriter {
     } else {
       trxBlock.addStatement(ts.createExpressionStatement(execExpr));
       idExprs = inputMappings
-        .filter(m => this.isIdField(identityTypeInfo, m.targetField))
-        .flatMap(m => {
-          const ids = m.columnMapping.columns.map(c => trxBlock.findIdentifierFor(c));
-          if (ids.every(id => id != null)) return ids as ts.Identifier[];
+        .filter((m) => this.isIdField(identityTypeInfo, m.targetField))
+        .flatMap((m) => {
+          const ids = m.columnMapping.columns.map((c) => trxBlock.findIdentifierFor(c));
+          if (ids.every((id) => id != null)) return ids as ts.Identifier[];
           const id = trxBlock.findIdentifierFor(m.inputField);
           if (!id) {
             throw new Error(`Identifier not found for field "${identityTypeInfo.type.name}.${m.inputField.name}"`);
@@ -1161,7 +1161,7 @@ export class SqlResolverWriter {
       targetTypeInfo !== identityTypeInfo ? this.sqlMappings.getIdentityTableForType(targetTypeInfo.type) : undefined;
     let updateBlock = targetTableMapping ? trxBlock.newBlock() : trxBlock;
     const nonIdInputMappings = this.getInputFieldMappings(inputType, identityTableMapping).filter(
-      m => !this.isIdField(identityTypeInfo, m.targetField)
+      (m) => !this.isIdField(identityTypeInfo, m.targetField)
     );
     let updateId = updateBlock.declareConst(
       'update',
@@ -1221,9 +1221,9 @@ export class SqlResolverWriter {
 
     // const [id1, id2] = ... => { ...; return [id1, id2]; }
     trxBlock.addStatement(ts.createReturn(ts.createArrayLiteral(innerIdExprs)));
-    const outerIdExprs = innerIdExprs.map(idExpr => outerBlock.createIdentifier(ts.idText(idExpr)));
+    const outerIdExprs = innerIdExprs.map((idExpr) => outerBlock.createIdentifier(ts.idText(idExpr)));
     outerBlock.declareConst(
-      ts.createArrayBindingPattern(outerIdExprs.map(idExpr => ts.createBindingElement(undefined, undefined, idExpr))),
+      ts.createArrayBindingPattern(outerIdExprs.map((idExpr) => ts.createBindingElement(undefined, undefined, idExpr))),
       undefined,
       trxExpr
     );
@@ -1244,7 +1244,7 @@ export class SqlResolverWriter {
             undefined,
             undefined,
             block.toBlock()
-          )
+          ),
         ]
       )
     );
@@ -1288,7 +1288,7 @@ export class SqlResolverWriter {
   private getExecuteExpression(context: ts.Expression, queryExpr: ts.Expression): ts.Expression {
     return ts.createAwait(
       ts.createCall(ts.createPropertyAccess(ts.createPropertyAccess(context, 'sqlExecutor'), 'execute'), undefined, [
-        queryExpr
+        queryExpr,
       ])
     );
   }
@@ -1350,7 +1350,7 @@ export class SqlResolverWriter {
           const enumsId = this.getEnumsImport(block.module);
           const enumName = `${pascalCase(fieldType.name)}ToSql`;
           expr = ts.createCall(ts.createPropertyAccess(ts.createPropertyAccess(enumsId, enumName), 'get'), undefined, [
-            expr
+            expr,
           ]);
           if (nullable) {
             expr = ts.createLogicalAnd(inputId, expr);
@@ -1412,12 +1412,12 @@ export class SqlResolverWriter {
     resolveBlock.declareConst(
       ts.createArrayBindingPattern([
         ts.createOmittedExpression(),
-        ts.createBindingElement(undefined, undefined, metaId)
+        ts.createBindingElement(undefined, undefined, metaId),
       ]),
       undefined,
       ts.createCall(ts.createPropertyAccess(gqlsqlId, 'resolveQid'), undefined, [
         inputId,
-        ts.createPropertyAccess(this.getMetaImport(block.module), type)
+        ts.createPropertyAccess(this.getMetaImport(block.module), type),
       ])
     );
 
@@ -1427,7 +1427,7 @@ export class SqlResolverWriter {
       ts.createCall(ts.createPropertyAccess(trxNodes.contextId, 'getIdForXid'), undefined, [
         inputId,
         metaId,
-        trxNodes.trxId
+        trxNodes.trxId,
       ])
     );
 
@@ -1476,7 +1476,7 @@ export class SqlResolverWriter {
       ts.createCall(ts.createPropertyAccess(trxNodes.contextId, 'getIdForXid'), undefined, [
         inputId,
         ts.createPropertyAccess(this.getMetaImport(block.module), type),
-        trxNodes.trxId
+        trxNodes.trxId,
       ])
     );
     if (!isNonNullType(inputField.type)) {
@@ -1542,7 +1542,7 @@ export class SqlResolverWriter {
         ts.createExpressionStatement(
           ts.createCall(ts.createPropertyAccess(resolverId, 'addOrderBy'), undefined, [
             ts.createStringLiteral(part.column.name),
-            ts.createStringLiteral(table.name)
+            ts.createStringLiteral(table.name),
           ])
         )
       );
@@ -1676,7 +1676,7 @@ export class SqlResolverWriter {
         [this.createSimpleParameter('obj', this.createSchemaTypeRef(type.name))],
         ts.createKeywordTypeNode(ts.SyntaxKind.StringKeyword),
         ts.createBlock([ts.createReturn(ts.createStringLiteral('TODO'))], true)
-      )
+      ),
     ];
     module.addStatement(ts.createExportDefault(ts.createObjectLiteral(properties, true)));
 
@@ -1742,7 +1742,7 @@ const defaultRangeValidatorOptions: RangeValidatorOptions = {
   minMethod: 'greaterThanOrEqual',
   maxMethod: 'lessThanOrEqual',
   minArgName: 'min',
-  maxArgName: 'max'
+  maxArgName: 'max',
 };
 
 function getRangeValidator(
@@ -1785,7 +1785,7 @@ function getRangeValidator(
       expr = ts.createCall(
         ts.createPropertyAccess(ts.createCall(ts.createPropertyAccess(expr, typeMethod), undefined, undefined), method),
         undefined,
-        params.map(v => ts.createNumericLiteral(v))
+        params.map((v) => ts.createNumericLiteral(v))
       );
     }
   }

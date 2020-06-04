@@ -73,5 +73,5 @@ export const defaultConfig: DirectiveConfig = {
   updateOnlyDirective: 'updateOnly',
   useManyToManyDirective: 'useManyToMany',
   wkidDirective: 'wkid',
-  wkidRefDirective: 'wkidRef'
+  wkidRefDirective: 'wkidRef',
 };

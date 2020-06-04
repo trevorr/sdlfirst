@@ -76,6 +76,6 @@ export const defaultConfig: SqlConfig = {
   tableOptions: {
     engine: 'InnoDB',
     defaultCharset: 'utf8mb4',
-    defaultCollate: 'utf8mb4_0900_ai_ci'
-  }
+    defaultCollate: 'utf8mb4_0900_ai_ci',
+  },
 };

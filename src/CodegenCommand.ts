@@ -14,16 +14,16 @@ export default abstract class CodegenCommand extends Command {
     baseline: flags.string({
       char: 'b',
       description: 'baseline directory',
-      default: defaultBaseline
+      default: defaultBaseline,
     }),
     'context-type': flags.string({
       description: 'resolver context type',
-      default: 'SqlResolverContext'
+      default: 'SqlResolverContext',
     }),
     'context-module': flags.string({
       description: 'resolver context module',
-      default: 'gqlsql'
-    })
+      default: 'gqlsql',
+    }),
   };
 
   static args = [{ name: 'file', required: true }];

@@ -6,7 +6,7 @@ export default class Baseline extends CodegenCommand {
   static examples = [
     `$ sdlfirst baseline
 42 baseline source files written to ${defaultBaseline}
-`
+`,
   ];
 
   static flags = CodegenCommand.flags;

@@ -18,8 +18,8 @@ export const defaultConfig: TypesWriterConfig = {
     DateTime: 'Date',
     JSON: 'any',
     Time: 'Date',
-    URI: 'string'
-  }
+    URI: 'string',
+  },
 };
 
 export class TypesWriter {
@@ -37,19 +37,19 @@ export class TypesWriter {
     const outputFile = path.join(outputDir, sdlTypesFile);
     const config = {
       config: {
-        scalars: scalarTypes
+        scalars: scalarTypes,
       },
       documents: [],
       filename: outputFile,
       plugins: [
         {
-          typescript: {}
-        }
+          typescript: {},
+        },
       ],
       pluginMap: {
-        typescript: typescriptPlugin
+        typescript: typescriptPlugin,
       },
-      schema: document || parse(printSchema(this.schema))
+      schema: document || parse(printSchema(this.schema)),
     };
     await mkdir(outputDir, { recursive: true });
     const source = await codegen(config);

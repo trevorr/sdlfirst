@@ -70,7 +70,7 @@ class JoinBuilderImpl implements JoinBuilder {
       typeof toColumn === 'string'
         ? ts.createStringLiteral(`${this.tableAlias}.${toColumn}`)
         : ts.createTemplateExpression(ts.createTemplateHead(`${this.tableAlias}.`), [
-            ts.createTemplateSpan(toColumn, ts.createTemplateTail(''))
+            ts.createTemplateSpan(toColumn, ts.createTemplateTail('')),
           ]);
     this.addProperty(fromTableAlias, fromColumn, toColumnExpr);
     return this;
@@ -83,7 +83,7 @@ class JoinBuilderImpl implements JoinBuilder {
   ): this {
     const toValueExpr = ts.createCall(ts.createPropertyAccess(this.qeb.getKnex(), 'raw'), undefined, [
       ts.createStringLiteral('?'),
-      ts.createArrayLiteral([typeof toValue === 'string' ? ts.createStringLiteral(toValue) : toValue])
+      ts.createArrayLiteral([typeof toValue === 'string' ? ts.createStringLiteral(toValue) : toValue]),
     ]);
     this.addProperty(fromTableAlias, fromColumn, toValueExpr);
     return this;
@@ -154,7 +154,7 @@ export class RootQueryExpressionBuilder implements QueryExpressionBuilder {
     return typeof tableName === 'string'
       ? ts.createStringLiteral(this.aliasTable(tableName, tableAlias))
       : ts.createTemplateExpression(ts.createTemplateHead(''), [
-          ts.createTemplateSpan(tableName, ts.createTemplateTail(` as ${tableAlias}`))
+          ts.createTemplateSpan(tableName, ts.createTemplateTail(` as ${tableAlias}`)),
         ]);
   }
 

@@ -19,7 +19,7 @@ export default class Patch extends CodegenCommand {
   static examples = [
     `$ sdlfirst patch
 42 baseline source files written to ${defaultBaseline}
-`
+`,
   ];
 
   static flags = {
@@ -27,8 +27,8 @@ export default class Patch extends CodegenCommand {
     output: flags.string({
       char: 'o',
       description: 'output directory',
-      default: defaultOutput
-    })
+      default: defaultOutput,
+    }),
   };
 
   static args = CodegenCommand.args;
@@ -94,8 +94,9 @@ export default class Patch extends CodegenCommand {
       fs.renameSync(newFile, oldFile);
     }
     this.log(
-      `Patch completed: ${patchedCount} patched, ${newCount} new, ${unchangedCount} unchanged, ${failedCount +
-        baselessCount} failed`
+      `Patch completed: ${patchedCount} patched, ${newCount} new, ${unchangedCount} unchanged, ${
+        failedCount + baselessCount
+      } failed`
     );
   }
 }

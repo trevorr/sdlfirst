@@ -18,7 +18,7 @@ export const defaultConfig: SqlMetadataConfig = {
   ...defaultSqlConfig,
   ...defaultFormatterConfig,
   gqlsqlNamespace: 'gqlsql',
-  gqlsqlModule: 'gqlsql'
+  gqlsqlModule: 'gqlsql',
 };
 
 interface MetaInfo {
@@ -48,7 +48,7 @@ export class SqlMetadataWriter {
         await this.writeTypeMetadata(typeInfo as TypeInfo<GraphQLCompositeType>);
       }
     }
-    const files = this.metas.map(r => r.path);
+    const files = this.metas.map((r) => r.path);
     if (this.metas.length > 0) {
       const outputFile = this.getSourcePath('index');
       await this.createIndexModule(this.metas).write(outputFile, this.formatter);
@@ -90,7 +90,7 @@ export class SqlMetadataWriter {
           propMap['tableName'] = ts.createStringLiteral(table.name);
 
           propMap['idColumns'] = ts.createArrayLiteral(
-            table.primaryKey.parts.map(part => ts.createStringLiteral(part.column.name))
+            table.primaryKey.parts.map((part) => ts.createStringLiteral(part.column.name))
           );
 
           if (identityTypeInfo.externalIdField && identityTypeInfo.externalIdDirective) {
@@ -129,7 +129,7 @@ export class SqlMetadataWriter {
       propMap['objectTypes'] = ts.createArrayLiteral(
         objectTypes
           .sort((a, b) => compare(a.name, b.name))
-          .map(objectType => module.addImport(`./${objectType.name}`, objectType.name)),
+          .map((objectType) => module.addImport(`./${objectType.name}`, objectType.name)),
         true
       );
     }
@@ -137,14 +137,14 @@ export class SqlMetadataWriter {
     // must use names instead of metadata references to avoid circular imports
     const interfaceNames = new Set<string>();
     for (const objType of objectTypes) {
-      objType.getInterfaces().forEach(intf => interfaceNames.add(intf.name));
+      objType.getInterfaces().forEach((intf) => interfaceNames.add(intf.name));
     }
     interfaceNames.delete(type.name);
     if (interfaceNames.size > 0) {
       propMap['interfaceNames'] = ts.createArrayLiteral(
         Array.from(interfaceNames)
           .sort()
-          .map(name => ts.createStringLiteral(name)),
+          .map((name) => ts.createStringLiteral(name)),
         true
       );
     }

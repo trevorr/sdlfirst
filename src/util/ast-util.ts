@@ -7,11 +7,13 @@ interface WithDirectives {
 }
 
 export function findFirstDirective(type: WithDirectives, name: string): DirectiveNode | undefined {
-  return type.astNode && type.astNode.directives ? type.astNode.directives.find(d => d.name.value === name) : undefined;
+  return type.astNode && type.astNode.directives
+    ? type.astNode.directives.find((d) => d.name.value === name)
+    : undefined;
 }
 
 export function findDirectives(type: WithDirectives, name: string): DirectiveNode[] {
-  return type.astNode && type.astNode.directives ? type.astNode.directives.filter(d => d.name.value === name) : [];
+  return type.astNode && type.astNode.directives ? type.astNode.directives.filter((d) => d.name.value === name) : [];
 }
 
 export function hasDirective(type: WithDirectives, name: string): boolean {
@@ -21,13 +23,13 @@ export function hasDirective(type: WithDirectives, name: string): boolean {
 export function hasDirectives(type: WithDirectives, names: Iterable<string>): boolean {
   if (type.astNode && type.astNode.directives) {
     const nameSet = names instanceof Set ? names : new Set(names);
-    return type.astNode.directives.some(d => nameSet.has(d.name.value));
+    return type.astNode.directives.some((d) => nameSet.has(d.name.value));
   }
   return false;
 }
 
 export function getDirectiveArgument(directive: DirectiveNode, name: string): ArgumentNode | undefined {
-  return directive.arguments ? directive.arguments.find(a => a.name.value === name) : undefined;
+  return directive.arguments ? directive.arguments.find((a) => a.name.value === name) : undefined;
 }
 
 export function getRequiredDirectiveArgument(directive: DirectiveNode, name: string, kind?: string): ArgumentNode {

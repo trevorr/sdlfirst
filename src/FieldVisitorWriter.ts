@@ -9,7 +9,7 @@ import {
   isInterfaceType,
   isListType,
   isScalarType,
-  isUnionType
+  isUnionType,
 } from 'graphql';
 import { pascalCase } from 'pascal-case';
 import path from 'path';
@@ -26,7 +26,7 @@ import {
   isTypeTableMapping,
   SqlSchemaMappings,
   TableMapping,
-  TypeTableMapping
+  TypeTableMapping,
 } from './SqlSchemaBuilder';
 import { hasDirective } from './util/ast-util';
 import { compare } from './util/compare';
@@ -58,7 +58,7 @@ export const defaultConfig: FieldVisitorConfig = {
   gqlsqlModule: 'gqlsql',
   contextArgName: 'context',
   infoArgName: 'info',
-  visitorsArgName: 'visitors'
+  visitorsArgName: 'visitors',
 };
 
 interface VisitorInfo {
@@ -77,7 +77,7 @@ export class FieldVisitorWriter {
     object: [],
     edge: [],
     connection: [],
-    pageInfo: []
+    pageInfo: [],
   };
   private readonly formatter: TsFormatter;
 
@@ -106,7 +106,7 @@ export class FieldVisitorWriter {
 
     const files = Object.values(this.visitors)
       .flat()
-      .map(v => v.path);
+      .map((v) => v.path);
     files.push(indexFile);
     return files;
   }
@@ -116,7 +116,7 @@ export class FieldVisitorWriter {
     const isEdgeType = this.analyzer.isEdgeType(type);
     let fields = Object.values(type.getFields());
     if (isEdgeType) {
-      fields = fields.filter(field => field.name !== 'cursor' && field.name !== 'node');
+      fields = fields.filter((field) => field.name !== 'cursor' && field.name !== 'node');
       if (fields.length === 0) {
         return;
       }
@@ -152,14 +152,14 @@ export class FieldVisitorWriter {
       // gqlsql.ShallowFieldVisitors<gqlsql.SqlEdgesResolver, gqlsql.SqlQueryResolver>
       visitorsType = ts.createTypeReferenceNode(ts.createQualifiedName(gqlsqlId, ShallowFieldVisitorsType), [
         ts.createTypeReferenceNode(ts.createQualifiedName(gqlsqlId, SqlEdgesResolverType), undefined),
-        sqlQueryResolverType
+        sqlQueryResolverType,
       ]);
       properties.push(ts.createSpreadAssignment(ts.createPropertyAccess(gqlsqlId, EdgeVisitorsType)));
     } else {
       kind = 'object';
       // gqlsql.FieldVisitors<gqlsql.SqlQueryResolver>
       visitorsType = ts.createTypeReferenceNode(ts.createQualifiedName(gqlsqlId, FieldVisitorsType), [
-        sqlQueryResolverType
+        sqlQueryResolverType,
       ]);
     }
 
@@ -169,7 +169,7 @@ export class FieldVisitorWriter {
 
       const params = [
         this.createSimpleParameter(this.config.contextArgName),
-        this.createSimpleParameter(this.config.infoArgName)
+        this.createSimpleParameter(this.config.infoArgName),
       ];
       const body: ts.Statement[] = [];
 
@@ -179,7 +179,7 @@ export class FieldVisitorWriter {
         body.push(
           ts.createThrow(
             ts.createNew(ts.createIdentifier('Error'), undefined, [
-              ts.createStringLiteral(`TODO: return derived field ${type.name}.${field.name}`)
+              ts.createStringLiteral(`TODO: return derived field ${type.name}.${field.name}`),
             ])
           )
         );
@@ -226,7 +226,7 @@ export class FieldVisitorWriter {
         const callParams: ts.Expression[] = [
           ts.createPropertyAccess(infoId, 'fieldName'),
           joinSpec,
-          ts.createCall(ts.createPropertyAccess(gqlsqlId, 'resolveArguments'), undefined, [infoId])
+          ts.createCall(ts.createPropertyAccess(gqlsqlId, 'resolveArguments'), undefined, [infoId]),
         ];
         const nodeResolverId = ts.createIdentifier('nodeResolver');
         const configStatements = [];
@@ -236,7 +236,7 @@ export class FieldVisitorWriter {
           configStatements.push(
             ts.createStatement(
               ts.createCall(ts.createPropertyAccess(nodeResolverId, 'addTable'), undefined, [
-                this.getNodeJoinSpec(fieldMapping)
+                this.getNodeJoinSpec(fieldMapping),
               ])
             )
           );
@@ -249,7 +249,7 @@ export class FieldVisitorWriter {
             ts.createStatement(
               ts.createCall(ts.createPropertyAccess(nodeResolverId, 'addOrderBy'), undefined, [
                 ts.createStringLiteral(part.column.name),
-                ts.createStringLiteral(toTable.name)
+                ts.createStringLiteral(toTable.name),
               ])
             )
           );
@@ -276,7 +276,7 @@ export class FieldVisitorWriter {
                   undefined,
                   undefined,
                   ts.createBlock(configStatements)
-                )
+                ),
               ]
             )
           )
@@ -360,7 +360,7 @@ export class FieldVisitorWriter {
         const orderColumns = fieldMapping.sequenceColumn ? [fieldMapping.sequenceColumn] : fieldMapping.listColumns!;
         for (const orderColumn of orderColumns) {
           resolver = ts.createCall(ts.createPropertyAccess(resolver, 'addOrderBy'), undefined, [
-            ts.createStringLiteral(orderColumn.name)
+            ts.createStringLiteral(orderColumn.name),
           ]);
         }
         if (isTableType(elementType) && fieldMapping.listColumns) {
@@ -395,7 +395,7 @@ export class FieldVisitorWriter {
       defaultExpr = ts.createCall(ts.createPropertyAccess(ts.createIdentifier('Object'), 'assign'), undefined, [
         ts.createObjectLiteral(),
         identityVisitorsId,
-        defaultExpr
+        defaultExpr,
       ]);
     }
     module.addStatement(ts.createExportDefault(defaultExpr));
@@ -453,15 +453,17 @@ export class FieldVisitorWriter {
                   ts.createPropertyAssignment(
                     'toColumns',
                     ts.createArrayLiteral(
-                      toTable.primaryKey.parts.map(part => ts.createStringLiteral(part.column.name))
+                      toTable.primaryKey.parts.map((part) => ts.createStringLiteral(part.column.name))
                     )
                   ),
                   ts.createPropertyAssignment('fromTable', ts.createStringLiteral(table.name)),
                   ts.createPropertyAssignment(
                     'fromColumns',
-                    ts.createArrayLiteral(table.primaryKey.parts.map(part => ts.createStringLiteral(part.column.name)))
-                  )
-                ])
+                    ts.createArrayLiteral(
+                      table.primaryKey.parts.map((part) => ts.createStringLiteral(part.column.name))
+                    )
+                  ),
+                ]),
               ])
             )
           );
@@ -507,24 +509,24 @@ export class FieldVisitorWriter {
       }
     } else {
       // many:many
-      fromColumns = fromIdMapping.table.primaryKey.parts.map(p => p.column);
+      fromColumns = fromIdMapping.table.primaryKey.parts.map((p) => p.column);
       toColumns = sliceFirstLast(
         fieldMapping.toTable.table.primaryKey.parts,
         fieldMapping.pkPrefix!,
         fromColumns.length
-      ).map(p => p.column);
+      ).map((p) => p.column);
     }
     return this.buildJoinSpec(fieldMapping.toTable.table, toColumns, fromTableMapping.table, fromColumns);
   }
 
   private getNodeJoinSpec(fieldMapping: FieldJoin): ts.Expression {
     const { table } = fieldMapping.nodeTable!;
-    const toColumns = table.primaryKey.parts.map(p => p.column);
+    const toColumns = table.primaryKey.parts.map((p) => p.column);
     const fromColumns = sliceFirstLast(
       fieldMapping.toTable.table.primaryKey.parts,
       !fieldMapping.pkPrefix,
       toColumns.length
-    ).map(p => p.column);
+    ).map((p) => p.column);
     return this.buildJoinSpec(table, toColumns, fieldMapping.toTable.table, fromColumns);
   }
 
@@ -541,7 +543,7 @@ export class FieldVisitorWriter {
     const { table } = toTableMapping;
     return this.buildJoinSpec(
       table,
-      table.primaryKey.parts.map(p => p.column),
+      table.primaryKey.parts.map((p) => p.column),
       fromTable,
       fromColumns,
       includeTypeName ? toType.name : undefined
@@ -588,7 +590,7 @@ export class FieldVisitorWriter {
     columns: SqlColumn[],
     targetTable: SqlTable
   ): void {
-    const discriminatorIndex = columns.findIndex(column => column.discriminator);
+    const discriminatorIndex = columns.findIndex((column) => column.discriminator);
     let discriminatorColumn = null;
     if (discriminatorIndex >= 0) {
       discriminatorColumn = columns[discriminatorIndex];
@@ -598,7 +600,7 @@ export class FieldVisitorWriter {
     params.push(
       ts.createPropertyAssignment(
         `${fromOrTo}Columns`,
-        ts.createArrayLiteral(columns.map(column => ts.createStringLiteral(column.name)))
+        ts.createArrayLiteral(columns.map((column) => ts.createStringLiteral(column.name)))
       )
     );
 
@@ -612,8 +614,8 @@ export class FieldVisitorWriter {
           ts.createArrayLiteral([
             ts.createObjectLiteral([
               ts.createPropertyAssignment('column', ts.createStringLiteral(discriminatorColumn.name)),
-              ts.createPropertyAssignment('value', ts.createStringLiteral(targetTable.discriminatorValue))
-            ])
+              ts.createPropertyAssignment('value', ts.createStringLiteral(targetTable.discriminatorValue)),
+            ]),
           ])
         )
       );
@@ -622,7 +624,7 @@ export class FieldVisitorWriter {
 
   private getFieldColumns(fields: FieldType[], tableMapping: TableMapping): SqlColumn[] {
     const { fieldMappings, table } = tableMapping;
-    return fields.flatMap(field => {
+    return fields.flatMap((field) => {
       const fieldMapping = fieldMappings.get(field);
       if (!fieldMapping) {
         throw new Error(`No mapping for join field "${field.name}" of table "${table.name}"`);
@@ -660,7 +662,7 @@ export class FieldVisitorWriter {
 
   private addObjectField(joinSpec?: ts.Expression): ts.Expression {
     const callParams: ts.Expression[] = [
-      ts.createPropertyAccess(ts.createIdentifier(this.config.infoArgName), 'fieldName')
+      ts.createPropertyAccess(ts.createIdentifier(this.config.infoArgName), 'fieldName'),
     ];
     if (joinSpec) {
       callParams.push(joinSpec);
@@ -678,7 +680,7 @@ export class FieldVisitorWriter {
       undefined,
       [
         ts.createPropertyAccess(ts.createIdentifier(this.config.infoArgName), 'fieldName'),
-        ts.createArrayLiteral(joinSpec)
+        ts.createArrayLiteral(joinSpec),
       ]
     );
   }
@@ -688,7 +690,7 @@ export class FieldVisitorWriter {
     return ts.createCall(ts.createPropertyAccess(gqlsqlId, 'addQidField'), undefined, [
       ts.createIdentifier(this.config.contextArgName),
       ts.createPropertyAccess(ts.createIdentifier(this.config.infoArgName), 'fieldName'),
-      ts.createPropertyAccess(metaId, type.name)
+      ts.createPropertyAccess(metaId, type.name),
     ]);
   }
 
@@ -721,7 +723,7 @@ export class FieldVisitorWriter {
     }
     const gqlsqlId = module.addNamespaceImport(this.config.gqlsqlModule, this.config.gqlsqlNamespace);
     const visitorsType = ts.createTypeReferenceNode(PartialType, [
-      ts.createTypeReferenceNode(ts.createQualifiedName(gqlsqlId, SqlTypeVisitorsType), undefined)
+      ts.createTypeReferenceNode(ts.createQualifiedName(gqlsqlId, SqlTypeVisitorsType), undefined),
     ]);
     const visitorsId = module.declareConst(VisitorsConst, visitorsType, ts.createObjectLiteral(kindProperties, true));
     module.addStatement(ts.createExportDefault(visitorsId));

@@ -20,7 +20,7 @@ import {
   isUnionType,
   ListValueNode,
   ObjectValueNode,
-  StringValueNode
+  StringValueNode,
 } from 'graphql';
 import { singular } from 'pluralize';
 import { snakeCase } from 'snake-case';
@@ -31,7 +31,7 @@ import {
   isConnectionFieldInfo,
   TableType,
   TableTypeInfo,
-  TypeInfo
+  TypeInfo,
 } from './Analyzer';
 import { defaultConfig, SqlConfig } from './config/SqlConfig';
 import { SqlColumn } from './model/SqlColumn';
@@ -42,7 +42,7 @@ import {
   formatLocationOf,
   getDirectiveArgument,
   getRequiredDirectiveArgument,
-  hasDirective
+  hasDirective,
 } from './util/ast-util';
 
 export interface FieldColumns {
@@ -101,7 +101,7 @@ enum FieldsMapped {
   SOME_KEYS,
   ALL_KEYS,
   SOME_DATA,
-  ALL_DATA
+  ALL_DATA,
 }
 
 type InternalTableMapping<T extends TableMapping = TableMapping> = T & {
@@ -130,7 +130,7 @@ export class SqlSchemaBuilder {
     }
     return {
       tables: Array.from(this.tableMappingByName.values()),
-      getIdentityTableForType: type => this.identityTableMappingByType.get(type)
+      getIdentityTableForType: (type) => this.identityTableMappingByType.get(type),
     };
   }
 
@@ -189,7 +189,7 @@ export class SqlSchemaBuilder {
             name: this.config.internalIdName,
             type: this.config.internalIdSqlType ?? this.config.autoIncrementType,
             notNull: true,
-            autoIncrement: true
+            autoIncrement: true,
           };
           table.columns.push(idColumn);
           table.primaryKey.parts.push({ column: idColumn, descending: false });
@@ -198,7 +198,7 @@ export class SqlSchemaBuilder {
         // emit primary key fields separately first to support circular references
         for (const field of typeInfo.internalIdFields) {
           const columns = this.emitColumnsForField(mapping, typeInfo, field);
-          table.primaryKey.parts.push(...columns.map(column => ({ column, descending: false })));
+          table.primaryKey.parts.push(...columns.map((column) => ({ column, descending: false })));
           fieldNames!.delete(field.name);
         }
       }
@@ -228,10 +228,10 @@ export class SqlSchemaBuilder {
       columns: [],
       primaryKey: {
         type: SqlKeyType.PRIMARY,
-        parts: []
+        parts: [],
       },
       keys: [],
-      options: { ...this.config.tableOptions }
+      options: { ...this.config.tableOptions },
     };
   }
 
@@ -250,7 +250,7 @@ export class SqlSchemaBuilder {
       table,
       fieldMappings: new Map(),
       fieldsMapped: FieldsMapped.NONE,
-      fieldNames
+      fieldNames,
     };
     this.tableMappingByName.set(name, mapping);
     return mapping;
@@ -267,7 +267,7 @@ export class SqlSchemaBuilder {
       field,
       table,
       fieldMappings: new Map(),
-      fieldsMapped: FieldsMapped.NONE
+      fieldsMapped: FieldsMapped.NONE,
     };
     this.tableMappingByName.set(name, mapping);
     return mapping;
@@ -345,8 +345,8 @@ export class SqlSchemaBuilder {
           if (fieldInfo.nodeBackrefField) {
             fieldMapping.toFields = [fieldInfo.nodeBackrefField];
           } else {
-            fieldMapping.fromFields = fieldInfo.nodeBackrefJoin!.map(pair => pair[1] || pair[0]);
-            fieldMapping.toFields = fieldInfo.nodeBackrefJoin!.map(pair => pair[0]);
+            fieldMapping.fromFields = fieldInfo.nodeBackrefJoin!.map((pair) => pair[1] || pair[0]);
+            fieldMapping.toFields = fieldInfo.nodeBackrefJoin!.map((pair) => pair[0]);
           }
           mapping.fieldMappings.set(field, fieldMapping);
           return [];
@@ -366,7 +366,7 @@ export class SqlSchemaBuilder {
             field,
             toTable: joinTableMapping,
             pkPrefix: false,
-            nodeTable: nodeTableMapping
+            nodeTable: nodeTableMapping,
           });
           return [];
         }
@@ -385,14 +385,14 @@ export class SqlSchemaBuilder {
             notNull,
             uniqueKey
           );
-          joinTableMapping.table.primaryKey.parts.push(...refCols.map(column => ({ column, descending: false })));
+          joinTableMapping.table.primaryKey.parts.push(...refCols.map((column) => ({ column, descending: false })));
           joinTableMapping.fieldsMapped = FieldsMapped.ALL_KEYS;
           const { extraEdgeFields } = edgeTypeInfo;
           if (extraEdgeFields) {
             this.emitColumnsForFields(
               joinTableMapping,
               edgeTypeInfo,
-              extraEdgeFields.map(f => f.name)
+              extraEdgeFields.map((f) => f.name)
             );
           }
           this.emitJoinTableKeys(joinTableMapping.table, field);
@@ -402,7 +402,7 @@ export class SqlSchemaBuilder {
           field,
           toTable: joinTableMapping,
           pkPrefix: true,
-          nodeTable: nodeTableMapping
+          nodeTable: nodeTableMapping,
         });
         return [];
       } else {
@@ -454,12 +454,12 @@ export class SqlSchemaBuilder {
         sequenceColumn = {
           name: this.config.sequenceName,
           type: this.config.sequenceSqlType,
-          notNull: true
+          notNull: true,
         };
         joinTable.columns.push(sequenceColumn);
         joinTable.primaryKey.parts.push({
           column: sequenceColumn,
-          descending: false
+          descending: false,
         });
       }
 
@@ -500,21 +500,21 @@ export class SqlSchemaBuilder {
           charset,
           collate,
           srid,
-          notNull: true
+          notNull: true,
         };
         joinTable.columns.push(column);
         keyColumns = [column];
       }
 
       if (uniqueKey && keyColumns) {
-        const parts = keyColumns.map(column => ({ column, descending: false }));
+        const parts = keyColumns.map((column) => ({ column, descending: false }));
         if (!ordered) {
           joinTable.primaryKey.parts = joinTable.primaryKey.parts.concat(parts);
         } else {
           joinTable.keys.push({
             name,
             type: SqlKeyType.UNIQUE,
-            parts: joinTable.primaryKey.parts.slice(0, -1).concat(parts)
+            parts: joinTable.primaryKey.parts.slice(0, -1).concat(parts),
           });
         }
       }
@@ -526,7 +526,7 @@ export class SqlSchemaBuilder {
         toTable: joinTableMapping,
         pkPrefix: true,
         sequenceColumn,
-        listColumns: keyColumns
+        listColumns: keyColumns,
       });
       return [];
     } else {
@@ -540,7 +540,7 @@ export class SqlSchemaBuilder {
       collate,
       srid,
       notNull,
-      autoIncrement
+      autoIncrement,
     };
     if (hasDirective(field, this.config.createdAtDirective)) {
       column.default = 'CURRENT_TIMESTAMP';
@@ -553,7 +553,7 @@ export class SqlSchemaBuilder {
       table.keys.push({
         name,
         type: SqlKeyType.UNIQUE,
-        parts: [{ column, descending: false }]
+        parts: [{ column, descending: false }],
       });
     }
     const columns = [column];
@@ -657,21 +657,21 @@ export class SqlSchemaBuilder {
   private emitKeys(table: SqlTable, keysArg: ArgumentNode): void {
     for (const keyValue of (keysArg.value as ListValueNode).values) {
       const { fields } = keyValue as ObjectValueNode;
-      const nameField = fields.find(f => f.name.value === 'name');
+      const nameField = fields.find((f) => f.name.value === 'name');
       const keyName = nameField ? (nameField.value as StringValueNode).value : undefined;
-      const uniqueField = fields.find(f => f.name.value === 'unique');
+      const uniqueField = fields.find((f) => f.name.value === 'unique');
       const unique = uniqueField != null && (uniqueField.value as BooleanValueNode).value;
-      const columnsField = fields.find(f => f.name.value === 'columns');
+      const columnsField = fields.find((f) => f.name.value === 'columns');
       if (!columnsField || columnsField.value.kind !== 'ListValue') {
         throw new Error(`Expected ListValue for @${this.config.sqlTableDirective}.columns`);
       }
-      const columnNames = (columnsField.value as ListValueNode).values.map(v => (v as StringValueNode).value);
+      const columnNames = (columnsField.value as ListValueNode).values.map((v) => (v as StringValueNode).value);
       const name = keyName || columnNames.join('_');
-      if (!table.keys.find(key => key.name === name)) {
+      if (!table.keys.find((key) => key.name === name)) {
         table.keys.push({
           name,
           type: unique ? SqlKeyType.UNIQUE : SqlKeyType.INDEX,
-          parts: columnNames.map(columnName => {
+          parts: columnNames.map((columnName) => {
             let descending = false;
             const parts = columnName.split(' ');
             if (parts.length > 1) {
@@ -683,18 +683,18 @@ export class SqlSchemaBuilder {
                 throw new Error(`Invalid direction for column "${columnName}" of "${table.name}": ${parts[1]}`);
               }
             }
-            const column = table.columns.find(column => column.name === columnName);
+            const column = table.columns.find((column) => column.name === columnName);
             if (column == null) {
               throw new Error(
                 `Column "${columnName}" not found in table "${table.name}" for key "${name}"` +
-                  `; known columns: ${table.columns.map(column => column.name).join(', ')}`
+                  `; known columns: ${table.columns.map((column) => column.name).join(', ')}`
               );
             }
             return {
               column,
-              descending
+              descending,
             };
-          })
+          }),
         });
       }
     }
@@ -818,7 +818,7 @@ export class SqlSchemaBuilder {
       childTable.columns.push(childColumn);
       childTable.primaryKey.parts.push({
         column: childColumn,
-        descending: false
+        descending: false,
       });
     }
   }
@@ -877,7 +877,7 @@ export class SqlSchemaBuilder {
       charset: this.config.tableIdCharset,
       collate: this.config.tableIdCollate,
       notNull,
-      discriminator: true
+      discriminator: true,
     };
     sourceTable.columns.push(discColumn);
     addedColumns.push(discColumn);
@@ -955,7 +955,7 @@ export class SqlSchemaBuilder {
       sourceTable.keys.push({
         name: addedColumns[0].name,
         type: SqlKeyType.UNIQUE,
-        parts: addedColumns.map(column => ({ column, descending: false }))
+        parts: addedColumns.map((column) => ({ column, descending: false })),
       });
     }
     return addedColumns;

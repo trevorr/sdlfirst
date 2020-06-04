@@ -13,7 +13,7 @@ export default class Augment extends Command {
   static examples = [
     `$ sdlfirst augment schema/schema.graphql
 Augmented schema written to ${defaultOutput}
-`
+`,
   ];
 
   static flags = {
@@ -21,8 +21,8 @@ Augmented schema written to ${defaultOutput}
     output: flags.string({
       char: 'o',
       description: 'output filename',
-      default: defaultOutput
-    })
+      default: defaultOutput,
+    }),
   };
 
   static args = [{ name: 'file', required: true }];
@@ -30,7 +30,7 @@ Augmented schema written to ${defaultOutput}
   async run(): Promise<void> {
     const {
       args,
-      flags: { output }
+      flags: { output },
     } = this.parse(Augment);
     const inputSource = importSchema(args.file);
     const inputAst = parse(inputSource);

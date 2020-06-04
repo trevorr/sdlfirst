@@ -8,7 +8,7 @@ import {
   GraphQLType,
   isListType,
   isNonNullType,
-  isObjectType
+  isObjectType,
 } from 'graphql';
 
 export type InterfaceImplementorMap = Map<GraphQLInterfaceType, Set<GraphQLObjectType>>;
@@ -41,7 +41,7 @@ export function getElementType<T extends GraphQLType>(listType: T): T {
 
 export enum WrapperType {
   NON_NULL,
-  LIST
+  LIST,
 }
 
 export interface WrappedType {

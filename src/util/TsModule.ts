@@ -168,7 +168,7 @@ export class TsModule extends TsAbstractBlock {
 
   public async write(path: string, formatter?: TsFormatter): Promise<void> {
     const printer = ts.createPrinter({
-      newLine: ts.NewLineKind.LineFeed
+      newLine: ts.NewLineKind.LineFeed,
     });
     const sourceFile = ts.createSourceFile(path, '', ts.ScriptTarget.Latest, false, ts.ScriptKind.TS);
     let source = printer.printList(

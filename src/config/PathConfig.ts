@@ -25,5 +25,5 @@ export const defaultConfig: PathConfig = {
   sdlTypesDir: 'types',
   sdlTypesFile: 'index.ts',
   sqlExtension: '.sql',
-  typescriptExtension: '.ts'
+  typescriptExtension: '.ts',
 };

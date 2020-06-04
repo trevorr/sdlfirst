@@ -21,7 +21,7 @@ import {
   isScalarType,
   isUnionType,
   ListValueNode,
-  StringValueNode
+  StringValueNode,
 } from 'graphql';
 import { pascalCase } from 'pascal-case';
 import { defaultConfig, DirectiveConfig } from './config/DirectiveConfig';
@@ -95,7 +95,7 @@ export type TableTypeInfo = TypeInfo<TableType>;
 
 export enum EnumValueType {
   INT,
-  STRING
+  STRING,
 }
 
 export interface EnumTypeInfo extends TypeInfo<GraphQLEnumType> {
@@ -168,7 +168,7 @@ export class Analyzer {
         hasData: false,
         hasIdentity: false,
         hasTable: false,
-        referringFields: []
+        referringFields: [],
       };
       if (isEnumType(type)) {
         this.analyzeEnum(typeInfo as EnumTypeInfo);
@@ -354,7 +354,7 @@ export class Analyzer {
           default:
             throw new Error(
               `Type "${type.name}" cannot implement multiple table interfaces: ` +
-                intfTables.map(i => i.type.name).join(', ')
+                intfTables.map((i) => i.type.name).join(', ')
             );
         }
 
@@ -438,7 +438,7 @@ export class Analyzer {
       if (this.isConnectionType(nullableFieldType)) {
         this.analyzeConnection(type, field, nullableFieldType).referringFields.push({
           type,
-          field
+          field,
         });
       } else if (this.isEdgeType(nullableFieldType)) {
         // analyzed as part of associated connection
@@ -601,7 +601,7 @@ export class Analyzer {
           `Referring type "${refType.name}" is not assignable to one-to-many back-reference field "${nodeType.name}.${fieldName}"`
         );
       }
-      if (field.args.some(arg => isNonNullType(arg.type))) {
+      if (field.args.some((arg) => isNonNullType(arg.type))) {
         throw new Error(`One-to-many back-reference field "${fieldName}" cannot have non-null arguments`);
       }
       return field;
@@ -615,7 +615,7 @@ export class Analyzer {
     // is there exactly one way to refer back to the referring type from the fields of the node type?
     // if so, we'll assume that is how the one-to-many relation is defined
     for (const field of Object.values(nodeType.getFields())) {
-      if (this.isIdentifiedBy(field.type, refType) && !field.args.some(arg => isNonNullType(arg.type))) {
+      if (this.isIdentifiedBy(field.type, refType) && !field.args.some((arg) => isNonNullType(arg.type))) {
         backrefField = field;
         ++backrefFieldCount;
       }
@@ -632,8 +632,8 @@ export class Analyzer {
   ): [FieldType, FieldType][] | undefined {
     const joinArg = getDirectiveArgument(otmDir, 'backrefJoin');
     if (joinArg != null) {
-      const pairs: string[][] = (joinArg.value as ListValueNode).values.map(lv =>
-        (lv as ListValueNode).values.map(sv => (sv as StringValueNode).value)
+      const pairs: string[][] = (joinArg.value as ListValueNode).values.map((lv) =>
+        (lv as ListValueNode).values.map((sv) => (sv as StringValueNode).value)
       );
       if (pairs.length === 0) {
         throw new Error(
@@ -657,7 +657,7 @@ export class Analyzer {
             `One-to-many back-reference join field "${nodeFieldName}" not found in node type "${nodeType.name}" for "${refType.name}.${refField.name}"`
           );
         }
-        if (nodeField.args.some(arg => isNonNullType(arg.type))) {
+        if (nodeField.args.some((arg) => isNonNullType(arg.type))) {
           throw new Error(`One-to-many back-reference join field "${nodeFieldName}" cannot have non-null arguments`);
         }
         const refJoinField = refType.getFields()[refJoinFieldName];
@@ -666,7 +666,7 @@ export class Analyzer {
             `One-to-many back-reference join field "${refJoinFieldName}" not found in referring type "${refType.name}" for "${refField.name}"`
           );
         }
-        if (refJoinField.args.some(arg => isNonNullType(arg.type))) {
+        if (refJoinField.args.some((arg) => isNonNullType(arg.type))) {
           throw new Error(`One-to-many back-reference join field "${refJoinFieldName}" cannot have non-null arguments`);
         }
         result.push([nodeField, refJoinField]);
@@ -702,7 +702,9 @@ export class Analyzer {
     if (isUnionType(targetType)) {
       const targetTypes = targetType.getTypes();
       const sourceTypes = isUnionType(sourceType) ? sourceType.getTypes() : [sourceType];
-      return sourceTypes.every(sourceType => targetTypes.some(targetType => this.isAssignable(targetType, sourceType)));
+      return sourceTypes.every((sourceType) =>
+        targetTypes.some((targetType) => this.isAssignable(targetType, sourceType))
+      );
     }
     if (isInterfaceType(targetType)) {
       // I <- T impl I (target type is an interface implemented by source type)
@@ -712,7 +714,7 @@ export class Analyzer {
       // I <- I2 where all I2 implementers implement I
       if (isInterfaceType(sourceType)) {
         const impls = this.interfaceImplementors.get(sourceType);
-        if (impls && Array.from(impls).every(impl => impl.getInterfaces().includes(targetType))) {
+        if (impls && Array.from(impls).every((impl) => impl.getInterfaces().includes(targetType))) {
           return true;
         }
       }

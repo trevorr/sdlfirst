@@ -47,7 +47,7 @@ const reservedWords = new Set([
   'protected',
   'public',
   'static',
-  'yield'
+  'yield',
 ]);
 
 export class TsNamer {

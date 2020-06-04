@@ -20,7 +20,7 @@ export const defaultConfig: SqlEnumMappingConfig = {
   ...defaultPathConfig,
   ...defaultFormatterConfig,
   schemaTypesNamespace: 'schema',
-  schemaTypesModule: '../types'
+  schemaTypesModule: '../types',
 };
 
 interface MappingInfo {
@@ -176,7 +176,7 @@ export class SqlEnumMappingWriter {
         ts.createExportDeclaration(
           undefined,
           undefined,
-          ts.createNamedExports(exports.map(name => ts.createExportSpecifier(undefined, name))),
+          ts.createNamedExports(exports.map((name) => ts.createExportSpecifier(undefined, name))),
           ts.createStringLiteral(`./${id}`)
         )
       );

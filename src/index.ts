@@ -60,7 +60,7 @@ export default class SDLFirst {
   }
 
   public writeSqlTables(config?: Partial<SqlConfig & PathConfig>): Promise<string[]> {
-    const tables = this.getSqlMappings(config).tables.map(m => m.table);
+    const tables = this.getSqlMappings(config).tables.map((m) => m.table);
     return new SqlTableWriter(config).writeTables(tables);
   }
 

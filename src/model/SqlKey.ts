@@ -5,7 +5,7 @@ export enum SqlKeyType {
   PRIMARY,
   UNIQUE,
   SPATIAL,
-  FULLTEXT
+  FULLTEXT,
 }
 
 export interface SqlKeyPart {

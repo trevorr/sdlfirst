@@ -13,7 +13,7 @@ export default class Types extends Command {
   static examples = [
     `$ sdlfirst types schema/schema.graphql
 Type definitions written to ${defaultOutput}
-`
+`,
   ];
 
   static flags = {
@@ -21,8 +21,8 @@ Type definitions written to ${defaultOutput}
     output: flags.string({
       char: 'o',
       description: 'output filename',
-      default: defaultOutput
-    })
+      default: defaultOutput,
+    }),
   };
 
   static args = [{ name: 'file', required: true }];
@@ -30,7 +30,7 @@ Type definitions written to ${defaultOutput}
   async run(): Promise<void> {
     const {
       args,
-      flags: { output }
+      flags: { output },
     } = this.parse(Types);
     const inputSource = importSchema(args.file);
     const inputAst = parse(inputSource);

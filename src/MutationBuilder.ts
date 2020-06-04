@@ -41,7 +41,7 @@ import {
   NonNullTypeNode,
   parse,
   StringValueNode,
-  TypeNode
+  TypeNode,
 } from 'graphql';
 import path from 'path';
 import { plural, singular } from 'pluralize';
@@ -85,12 +85,12 @@ export class MutationBuilder {
     if (mutation) {
       mutationConfig = mutation.toConfig();
       delete mutationConfig.astNode;
-      schemaConfig.types = schemaConfig.types.filter(type => type !== mutation);
+      schemaConfig.types = schemaConfig.types.filter((type) => type !== mutation);
     } else {
       mutationConfig = {
         name: DEFAULT_MUTATION_TYPE_NAME,
         description: 'Automatically generated mutations',
-        fields: {}
+        fields: {},
       };
     }
     const crudMutations = this.generateMutations(Object.keys(mutationConfig.fields));
@@ -99,13 +99,13 @@ export class MutationBuilder {
 
     // ensure resulting schema includes input directives not used by original schema
     const directivesSource = fs.readFileSync(path.join(path.dirname(__dirname), 'sdl', 'directives.graphql'), {
-      encoding: 'utf8'
+      encoding: 'utf8',
     });
     const directivesAst = parse(directivesSource);
     const directivesSchema = buildASTSchema(directivesAst);
-    const existingDirectiveNames = new Set(schemaConfig.directives.map(d => d.name));
+    const existingDirectiveNames = new Set(schemaConfig.directives.map((d) => d.name));
     schemaConfig.directives = schemaConfig.directives.concat(
-      directivesSchema.getDirectives().filter(d => !existingDirectiveNames.has(d.name))
+      directivesSchema.getDirectives().filter((d) => !existingDirectiveNames.has(d.name))
     );
 
     return new GraphQLSchema(schemaConfig);
@@ -131,12 +131,12 @@ export class MutationBuilder {
                     description: `Automatically generated output type for ${this.mutationTypeName}.create${type.name}`,
                     fields: {
                       [CLIENT_MUTATION_ID]: { type: GraphQLString },
-                      [lcFirst(type.name)]: { type: new GraphQLNonNull(type) }
-                    }
+                      [lcFirst(type.name)]: { type: new GraphQLNonNull(type) },
+                    },
                   })
                 ),
-                args: { input: { type: new GraphQLNonNull(createType) } }
-              }
+                args: { input: { type: new GraphQLNonNull(createType) } },
+              },
             ]);
           }
         }
@@ -154,12 +154,12 @@ export class MutationBuilder {
                     description: `Automatically generated output type for ${this.mutationTypeName}.update${type.name}`,
                     fields: {
                       [CLIENT_MUTATION_ID]: { type: GraphQLString },
-                      [lcFirst(type.name)]: { type: new GraphQLNonNull(type) }
-                    }
+                      [lcFirst(type.name)]: { type: new GraphQLNonNull(type) },
+                    },
                   })
                 ),
-                args: { input: { type: new GraphQLNonNull(updateType) } }
-              }
+                args: { input: { type: new GraphQLNonNull(updateType) } },
+              },
             ]);
           }
         }
@@ -177,12 +177,12 @@ export class MutationBuilder {
                     description: `Automatically generated output type for ${this.mutationTypeName}.delete${type.name}`,
                     fields: {
                       [CLIENT_MUTATION_ID]: { type: GraphQLString },
-                      [DELETED_FLAG]: { type: new GraphQLNonNull(GraphQLBoolean) }
-                    }
+                      [DELETED_FLAG]: { type: new GraphQLNonNull(GraphQLBoolean) },
+                    },
                   })
                 ),
-                args: { input: { type: new GraphQLNonNull(deleteType) } }
-              }
+                args: { input: { type: new GraphQLNonNull(deleteType) } },
+              },
             ]);
           }
         }
@@ -220,7 +220,7 @@ export class MutationBuilder {
       if (existingInput) return existingInput;
     }
 
-    const fields = Object.values(type.getFields()).flatMap(field => this.getCreateInputFields(field, type, baseName));
+    const fields = Object.values(type.getFields()).flatMap((field) => this.getCreateInputFields(field, type, baseName));
     if (!fields.length) return null;
 
     if (!nested) {
@@ -238,10 +238,10 @@ export class MutationBuilder {
         description: {
           kind: 'StringValue',
           value: description,
-          block: true
+          block: true,
         },
-        fields: fields.map(f => f[1].astNode!)
-      }
+        fields: fields.map((f) => f[1].astNode!),
+      },
     });
     if (nested) {
       this.nestedTypes.set(name, result);
@@ -311,13 +311,13 @@ export class MutationBuilder {
         }
         const excludeArg = getDirectiveArgument(createDir, 'exclude');
         const excludeSet = new Set<string>(
-          excludeArg ? (excludeArg.value as ListValueNode).values.map(v => (v as StringValueNode).value) : []
+          excludeArg ? (excludeArg.value as ListValueNode).values.map((v) => (v as StringValueNode).value) : []
         );
         const objType = namedType;
         const nestedName = baseName + ucFirst(field.name);
         const fields = Object.values(objType.getFields())
-          .filter(f => f.name !== thisFieldName && !excludeSet.has(f.name))
-          .flatMap(f => this.getCreateInputFields(f, objType, nestedName));
+          .filter((f) => f.name !== thisFieldName && !excludeSet.has(f.name))
+          .flatMap((f) => this.getCreateInputFields(f, objType, nestedName));
         if (!fields.length) {
           throw new Error(
             `No nested fields found for field "${parentType.name}.${field.name}" with @${this.config.createNestedDirective}.this`
@@ -327,7 +327,7 @@ export class MutationBuilder {
         inputType = new GraphQLInputObjectType({
           name: `Create${nestedName}Input`,
           description,
-          fields: Object.fromEntries(fields)
+          fields: Object.fromEntries(fields),
         });
       } else {
         throw new Error(
@@ -416,7 +416,7 @@ export class MutationBuilder {
       if (existingInput) return existingInput;
     }
 
-    const fields = Object.values(type.getFields()).flatMap(field => this.getUpdateInputFields(field, type));
+    const fields = Object.values(type.getFields()).flatMap((field) => this.getUpdateInputFields(field, type));
     if (!fields.length) return null;
 
     if (!nested) {
@@ -435,10 +435,10 @@ export class MutationBuilder {
         description: {
           kind: 'StringValue',
           value: description,
-          block: true
+          block: true,
         },
-        fields: fields.map(f => f[1].astNode!)
-      }
+        fields: fields.map((f) => f[1].astNode!),
+      },
     });
     if (nested) {
       this.nestedTypes.set(name, result);
@@ -538,13 +538,13 @@ export class MutationBuilder {
         fieldType = new GraphQLNonNull(fieldType);
       }
       return [
-        { name, type: fieldType, directive: this.getExternalIdRefDirective(typeInfo.externalIdDirective!, type.name)! }
+        { name, type: fieldType, directive: this.getExternalIdRefDirective(typeInfo.externalIdDirective!, type.name)! },
       ];
     }
 
     const { internalIdFields } = typeInfo;
     if (internalIdFields) {
-      return internalIdFields.flatMap(field => this.getIdRefFieldsFor(field, type, nonNull, namePrefix));
+      return internalIdFields.flatMap((field) => this.getIdRefFieldsFor(field, type, nonNull, namePrefix));
     }
 
     // see if all object types of an interface or union have a common external ID type
@@ -620,7 +620,7 @@ export class MutationBuilder {
   }
 
   private getExternalIdDirective(objectTypes: Iterable<GraphQLObjectType>): DirectiveNode | undefined {
-    return Array.from(objectTypes, impl => {
+    return Array.from(objectTypes, (impl) => {
       const typeInfo = this.analyzer.findTypeInfo(impl);
       if (!typeInfo || !typeInfo.externalIdDirective) {
         throw new Error(`No external ID for type "${impl.name}"`);
@@ -637,7 +637,7 @@ export class MutationBuilder {
   }
 
   private getExternalIdType(objectTypes: Iterable<GraphQLObjectType>): GraphQLScalarType {
-    const resultType = Array.from(objectTypes, impl => {
+    const resultType = Array.from(objectTypes, (impl) => {
       const typeInfo = this.analyzer.findTypeInfo(impl);
       if (!typeInfo || !typeInfo.externalIdField) {
         throw new Error(`No external ID for type "${impl.name}"`);
@@ -679,7 +679,7 @@ export class MutationBuilder {
 
     const fields: [string, GraphQLInputFieldConfig][] = [
       makeInputFieldConfigEntry(CLIENT_MUTATION_ID, GraphQLString),
-      ...toConfigEntries(this.getIdRefFields(type, true))
+      ...toConfigEntries(this.getIdRefFields(type, true)),
     ];
     const description = `Automatically generated input type for ${this.mutationTypeName}.delete${type.name}`;
     return new GraphQLInputObjectType({
@@ -692,10 +692,10 @@ export class MutationBuilder {
         description: {
           kind: 'StringValue',
           value: description,
-          block: true
+          block: true,
         },
-        fields: fields.map(f => f[1].astNode!)
-      }
+        fields: fields.map((f) => f[1].astNode!),
+      },
     });
   }
 
@@ -709,7 +709,7 @@ export class MutationBuilder {
       this.config.readonlyDirective,
       this.config.softDeleteDirective,
       this.config.typeDiscriminatorDirective,
-      this.config.updatedAtDirective
+      this.config.updatedAtDirective,
     ]);
   }
 
@@ -760,7 +760,7 @@ function makeInputValueDefinitionNode(
     kind: 'InputValueDefinition',
     name: makeNameNode(name),
     type: makeTypeNode(type),
-    directives
+    directives,
   };
 }
 
@@ -772,18 +772,18 @@ function makeTypeNode(type: GraphQLType): TypeNode {
   if (isNonNullType(type)) {
     return {
       kind: 'NonNullType',
-      type: makeTypeNode(type.ofType)
+      type: makeTypeNode(type.ofType),
     };
   }
   if (isListType(type)) {
     return {
       kind: 'ListType',
-      type: makeTypeNode(type.ofType)
+      type: makeTypeNode(type.ofType),
     };
   }
   return {
     kind: 'NamedType',
-    name: makeNameNode(type.name)
+    name: makeNameNode(type.name),
   };
 }
 
@@ -791,7 +791,7 @@ function makeDirectiveNode(name: string, args?: ArgumentNode[]): DirectiveNode {
   return {
     kind: 'Directive',
     name: makeNameNode(name),
-    arguments: args
+    arguments: args,
   };
 }
 
@@ -801,14 +801,14 @@ function makeStringArgumentNode(name: string, value: string): ArgumentNode {
     name: makeNameNode(name),
     value: {
       kind: 'StringValue',
-      value: value
-    }
+      value: value,
+    },
   };
 }
 
 function makeNameNode(name: string): NameNode {
   return {
     kind: 'Name',
-    value: name
+    value: name,
   };
 }
