@@ -162,6 +162,11 @@ export class SqlSchemaBuilder {
 
         // skip table entirely represented by interface table
         if (fieldNames.size === 0) {
+          const intfTableName = getTableName(identityTypeInfo.type, this.config);
+          const intfTableMapping = this.tableMappingByName.get(intfTableName);
+          if (intfTableMapping) {
+            this.identityTableMappingByType.set(type, { ...intfTableMapping, type });
+          }
           return null;
         }
       }

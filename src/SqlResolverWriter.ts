@@ -1100,7 +1100,7 @@ export class SqlResolverWriter {
     }
 
     const targetTableMapping = this.sqlMappings.getIdentityTableForType(targetTypeInfo.type);
-    if (targetTableMapping && targetTypeInfo !== identityTypeInfo) {
+    if (targetTableMapping && targetTableMapping.table !== identityTableMapping.table) {
       const insertProps: ts.ObjectLiteralElementLike[] = [];
       const keyParts = targetTableMapping.table.primaryKey.parts;
       if (keyParts.length !== idExprs.length) {
@@ -1170,7 +1170,7 @@ export class SqlResolverWriter {
     );
     let updateExpr = this.getUpdateExpression(identityTableMapping, trxId, idExprs, updateId);
     let execStmt = ts.createExpressionStatement(this.getExecuteExpression(resolverNodes.contextId, updateExpr));
-    if (targetTableMapping) {
+    if (targetTableMapping && targetTableMapping.table !== identityTableMapping.table) {
       updateBlock.addStatement(
         ts.createIf(this.getHasValueExpression(block.module, updateId), ts.createBlock([execStmt]))
       );

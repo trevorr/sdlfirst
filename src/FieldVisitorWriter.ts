@@ -443,7 +443,7 @@ export class FieldVisitorWriter {
       const objTypes = this.analyzer.getImplementingTypes(type);
       for (const objType of objTypes) {
         const objMapping = this.sqlMappings.getIdentityTableForType(objType);
-        if (objMapping) {
+        if (objMapping && objMapping.table !== table) {
           const toTable = objMapping.table;
           body.push(
             ts.createExpressionStatement(
