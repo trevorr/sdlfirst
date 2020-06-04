@@ -4,13 +4,15 @@ import { DocumentNode, GraphQLSchema, parse, printSchema } from 'graphql';
 import path from 'path';
 import { defaultConfig as defaultPathConfig, PathConfig } from './config/PathConfig';
 import { mkdir, writeFile } from './util/fs-util';
+import { defaultConfig as defaultFormatterConfig, TsFormatter, TsFormatterConfig } from './util/TsFormatter';
 
-export interface TypesWriterConfig extends PathConfig {
+export interface TypesWriterConfig extends PathConfig, TsFormatterConfig {
   scalarTypes: Record<string, string>;
 }
 
 export const defaultConfig: TypesWriterConfig = {
   ...defaultPathConfig,
+  ...defaultFormatterConfig,
   scalarTypes: {
     Date: 'Date',
     DateTime: 'Date',
@@ -22,9 +24,11 @@ export const defaultConfig: TypesWriterConfig = {
 
 export class TypesWriter {
   private readonly config: TypesWriterConfig;
+  private readonly formatter: TsFormatter;
 
   constructor(private readonly schema: GraphQLSchema, config?: Partial<TypesWriterConfig>) {
     this.config = Object.assign({}, defaultConfig, config);
+    this.formatter = new TsFormatter(config);
   }
 
   public async writeTypes(document?: DocumentNode): Promise<string[]> {
@@ -48,7 +52,8 @@ export class TypesWriter {
       schema: document || parse(printSchema(this.schema))
     };
     await mkdir(outputDir, { recursive: true });
-    const output = await codegen(config);
+    const source = await codegen(config);
+    const output = await this.formatter.format(source, outputFile);
     await writeFile(outputFile, output);
     return [outputFile];
   }
