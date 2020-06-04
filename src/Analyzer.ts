@@ -598,7 +598,8 @@ export class Analyzer {
       }
       if (!this.isIdentifiedBy(field.type, refType)) {
         throw new Error(
-          `Referring type "${refType.name}" is not assignable to one-to-many back-reference field "${nodeType.name}.${fieldName}"`
+          `Referring type "${refType.name}" is not assignable to one-to-many back-reference field` +
+            ` "${nodeType.name}.${fieldName}" of type "${field.type.toString()}"`
         );
       }
       if (field.args.some((arg) => isNonNullType(arg.type))) {
