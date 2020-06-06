@@ -125,7 +125,7 @@ export class FieldVisitorWriter {
     const module = new TsModule();
     const gqlsqlId = module.addNamespaceImport(this.config.gqlsqlModule, this.config.gqlsqlNamespace);
 
-    const typeInfo = this.analyzer.getTypeInfo(tableMapping.type);
+    const typeInfo = this.analyzer.getTypeInfo(type);
     const { identityTypeInfo } = typeInfo;
     let identityVisitorsId = null;
     const identityTableFields = new Set<string>();
@@ -329,7 +329,10 @@ export class FieldVisitorWriter {
         }
         if (isInterfaceType(configType)) {
           const configName = `configure${configType.name}Resolver`;
-          const configId = module.addNamedImport(`./${configType.name}`, configName);
+          const configId =
+            configType === type
+              ? ts.createIdentifier(configName)
+              : module.addNamedImport(`./${configType.name}`, configName);
           resultExpr = ts.createCall(configId, undefined, [resultExpr!]);
         }
         body.push(ts.createReturn(resultExpr!));
