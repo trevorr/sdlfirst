@@ -28,6 +28,11 @@ export function hasDirectives(type: WithDirectives, names: Iterable<string>): bo
   return false;
 }
 
+export function hasDirectiveFlag(directive: DirectiveNode, name: string): boolean {
+  const arg = getDirectiveArgument(directive, name);
+  return arg != null && arg.value.kind === 'BooleanValue' && arg.value.value;
+}
+
 export function getDirectiveArgument(directive: DirectiveNode, name: string): ArgumentNode | undefined {
   return directive.arguments ? directive.arguments.find((a) => a.name.value === name) : undefined;
 }

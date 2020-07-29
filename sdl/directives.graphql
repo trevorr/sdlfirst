@@ -145,8 +145,11 @@ directive @immutable on FIELD_DEFINITION
 """Indicates that a server-generated field that cannot be set on creation or update."""
 directive @readonly on FIELD_DEFINITION
 
-"""Indicates that a field or type has a derived value that is not directly stored. Implicitly read-only."""
-directive @derived on FIELD_DEFINITION | OBJECT
+"""
+Indicates that a field or type has a derived value that is not directly stored.
+Implicitly read-only unless marked writable.
+"""
+directive @derived(writable: Boolean) on FIELD_DEFINITION | OBJECT
 
 """Provides the default value for a field. Non-null fields with a default value are optional on creation."""
 directive @default(value: String!) on FIELD_DEFINITION

@@ -48,7 +48,13 @@ import { plural, singular } from 'pluralize';
 import { Memoize } from 'typescript-memoize';
 import { Analyzer, isConnectionFieldInfo, TableTypeInfo, TypeInfo } from './Analyzer';
 import { DirectiveConfig } from './config/DirectiveConfig';
-import { findFirstDirective, getDirectiveArgument, getRequiredDirectiveArgument, hasDirectives } from './util/ast-util';
+import {
+  findFirstDirective,
+  getDirectiveArgument,
+  getRequiredDirectiveArgument,
+  hasDirectiveFlag,
+  hasDirectives,
+} from './util/ast-util';
 import { lcFirst, transformCamelCaseLast, ucFirst } from './util/case';
 import { compare } from './util/compare';
 import { unwrapType, WrapperType, wrapType } from './util/graphql-util';
@@ -254,7 +260,7 @@ export class MutationBuilder {
     parentType: GraphQLObjectType,
     baseName: string
   ): [string, GraphQLInputFieldConfig][] {
-    if (hasDirectives(field, this.getNoCreateDirectives())) {
+    if (!this.includeInCreate(field)) {
       return [];
     }
 
@@ -262,7 +268,7 @@ export class MutationBuilder {
     let nonNull = false;
     if (isNonNullType(type)) {
       type = type.ofType;
-      nonNull = !hasDirectives(field, this.getDefaultDirectives());
+      nonNull = !this.hasDefault(field);
     }
     const wrapped = unwrapType(type);
     let namedType = wrapped.type;
@@ -447,7 +453,7 @@ export class MutationBuilder {
   }
 
   private getUpdateInputFields(field: FieldType, parentType: GraphQLObjectType): [string, GraphQLInputFieldConfig][] {
-    if (hasDirectives(field, this.getNoUpdateDirectives())) {
+    if (!this.includeInUpdate(field)) {
       return [];
     }
 
@@ -704,7 +710,6 @@ export class MutationBuilder {
     return new Set([
       this.config.autoincDirective,
       this.config.createdAtDirective,
-      this.config.derivedDirective,
       this.config.randomIdDirective,
       this.config.readonlyDirective,
       this.config.softDeleteDirective,
@@ -713,9 +718,21 @@ export class MutationBuilder {
     ]);
   }
 
+  private includeInCreate(field: FieldType): boolean {
+    if (hasDirectives(field, this.getNoCreateDirectives())) return false;
+    const derived = findFirstDirective(field, this.config.derivedDirective);
+    return !derived || hasDirectiveFlag(derived, 'writable');
+  }
+
   @Memoize()
   private getNoCreateDirectives(): Set<string> {
     return new Set(Array.from(this.getReadonlyDirectives()).concat(this.config.updateOnlyDirective));
+  }
+
+  private includeInUpdate(field: FieldType): boolean {
+    if (hasDirectives(field, this.getNoUpdateDirectives())) return false;
+    const derived = findFirstDirective(field, this.config.derivedDirective);
+    return !derived || hasDirectiveFlag(derived, 'writable');
   }
 
   @Memoize()
@@ -727,6 +744,10 @@ export class MutationBuilder {
         this.config.wkidDirective
       )
     );
+  }
+
+  private hasDefault(field: FieldType): boolean {
+    return hasDirectives(field, this.getDefaultDirectives());
   }
 
   @Memoize()
