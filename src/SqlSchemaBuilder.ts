@@ -183,7 +183,8 @@ export class SqlSchemaBuilder {
       mapping.fieldsMapped = FieldsMapped.SOME_KEYS;
 
       // if the table doesn't have an explicit internal ID, add an implicit one
-      if (!typeInfo.internalIdFields) {
+      const { internalIdFields } = typeInfo;
+      if (!internalIdFields || (internalIdFields.length === 1 && this.isGeneratedAutoinc(internalIdFields[0]))) {
         // if the table implements an interface table, use its internal ID
         if (identityTypeInfo) {
           const interfaceTable = this.generateTable(identityTypeInfo)!.table;
@@ -201,7 +202,7 @@ export class SqlSchemaBuilder {
         }
       } else {
         // emit primary key fields separately first to support circular references
-        for (const field of typeInfo.internalIdFields) {
+        for (const field of internalIdFields) {
           const columns = this.emitColumnsForField(mapping, typeInfo, field);
           table.primaryKey.parts.push(...columns.map((column) => ({ column, descending: false })));
           fieldNames!.delete(field.name);
@@ -225,6 +226,10 @@ export class SqlSchemaBuilder {
     }
 
     return mapping;
+  }
+
+  private isGeneratedAutoinc(field: FieldType): boolean {
+    return field.name === this.config.autoIncrementFieldName;
   }
 
   private newTable(name: string): SqlTable {
@@ -299,6 +304,12 @@ export class SqlSchemaBuilder {
     field: FieldType
   ): SqlColumn[] {
     if (hasDirective(field, this.config.derivedDirective)) {
+      return [];
+    }
+
+    if (this.isGeneratedAutoinc(field)) {
+      const fieldMapping: FieldColumns = { field, columns: mapping.table.primaryKey.parts.map(part => part.column) };
+      mapping.fieldMappings.set(field, fieldMapping);
       return [];
     }
 

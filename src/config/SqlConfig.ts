@@ -5,8 +5,10 @@ import { SqlTableOptions } from '../model/SqlTable';
 export interface SqlConfig extends DirectiveConfig, PathConfig {
   booleanSqlType: string;
 
-  // column configuration for @autoinc ID fields
+  // column and field configuration for @autoinc ID fields
   autoIncrementType: string;
+  autoIncrementFieldName?: string;
+  autoIncrementFieldType?: string;
 
   // column configuration for @rid ID fields
   randomIdName: string;
@@ -47,6 +49,8 @@ export const defaultConfig: SqlConfig = {
   booleanSqlType: 'tinyint(1)',
 
   autoIncrementType: 'int(10) unsigned',
+  autoIncrementFieldName: '_id',
+  autoIncrementFieldType: 'Int!',
 
   randomIdName: 'rid',
   randomIdSqlType: 'varchar(21)',

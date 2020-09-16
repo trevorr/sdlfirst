@@ -5,6 +5,7 @@ import { defaultConfig as defaultDirectiveConfig, DirectiveConfig } from './conf
 import { defaultConfig as defaultPathConfig, PathConfig } from './config/PathConfig';
 import { SqlConfig } from './config/SqlConfig';
 import { FieldVisitorConfig, FieldVisitorWriter } from './FieldVisitorWriter';
+import { InternalIdBuilder } from './InternalIdBuilder';
 import { MutationBuilder } from './MutationBuilder';
 import { SqlEnumMappingConfig, SqlEnumMappingWriter } from './SqlEnumMappingWriter';
 import { SqlMetadataConfig, SqlMetadataWriter } from './SqlMetadataWriter';
@@ -26,6 +27,10 @@ export default class SDLFirst {
 
   public addMutations(): GraphQLSchema {
     return (this.schema = new MutationBuilder(this.schema, this.analyzer).addMutations());
+  }
+
+  public addInternalIds(config?: Partial<SqlConfig>): GraphQLSchema {
+    return (this.schema = new InternalIdBuilder(this.schema, config).addInternalIds());
   }
 
   public async writeSchema(config?: Partial<PathConfig>): Promise<string[]> {

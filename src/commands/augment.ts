@@ -42,6 +42,7 @@ Augmented schema written to ${defaultOutput}
     }
     const sdlFirst = new SDLFirst(inputSchema);
     sdlFirst.addMutations();
+    sdlFirst.addInternalIds();
     sdlFirst.writeSchema(config);
     this.log(`Augmented schema written to ${output}`);
   }
