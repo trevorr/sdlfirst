@@ -7,12 +7,12 @@ import { formatTable } from '../src/model/SqlTable';
 function schemaTables(sdl: string): string[] {
   return new SqlSchemaBuilder(new Analyzer(buildSchema(sdl)))
     .generateTables()
-    .tables.map(t => formatTable(t.table))
+    .tables.map((t) => formatTable(t.table))
     .sort();
 }
 
 describe('SqlSchemaBuilder', () => {
-  it('basically works', async () => {
+  it('basically works', () => {
     const tables = schemaTables(`
       directive @rid on FIELD_DEFINITION
       type A { id: ID! @rid, b: B }
@@ -31,11 +31,11 @@ describe('SqlSchemaBuilder', () => {
   \`x\` text,
   PRIMARY KEY (\`a_id\`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-`
+`,
     ]);
   });
 
-  it('handles M:N connections with implicit edge table', async () => {
+  it('handles M:N connections with implicit edge table', () => {
     const tables = schemaTables(`
       directive @rid on FIELD_DEFINITION
       type A { id: ID! @rid, bs: BConnection! }
@@ -67,11 +67,11 @@ describe('SqlSchemaBuilder', () => {
   PRIMARY KEY (\`id\`),
   UNIQUE KEY \`rid\` (\`rid\`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-`
+`,
     ]);
   });
 
-  it('handles M:N connections with explicit join table via backref field', async () => {
+  it('handles M:N connections with explicit join table via backref field', () => {
     const tables = schemaTables(`
       directive @id on FIELD_DEFINITION
       directive @rid on FIELD_DEFINITION
@@ -102,7 +102,7 @@ describe('SqlSchemaBuilder', () => {
   \`to_id\` int(10) unsigned NOT NULL,
   PRIMARY KEY (\`from_id\`,\`to_id\`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-`
+`,
     ]);
   });
 });
