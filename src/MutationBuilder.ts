@@ -389,7 +389,7 @@ export class MutationBuilder {
   private hasRequiredEdgeFields(edgeTypeInfo: TableTypeInfo): boolean {
     if (edgeTypeInfo.extraEdgeFields) {
       for (const field of edgeTypeInfo.extraEdgeFields) {
-        if (isNonNullType(field.type)) {
+        if (isNonNullType(field.type) && !this.hasDefault(field)) {
           return true;
         }
       }
@@ -602,7 +602,7 @@ export class MutationBuilder {
     if (field) {
       args.push(makeStringArgumentNode('field', field));
     }
-    return makeDirectiveNode(name, args);
+    return makeDirectiveNode(this.config.idRefDirective, args);
   }
 
   private getExternalIdRefDirective(originalDirective: DirectiveNode, type: string): DirectiveNode {
