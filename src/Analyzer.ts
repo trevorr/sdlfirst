@@ -109,7 +109,7 @@ export interface EnumTypeInfo extends TypeInfo<GraphQLEnumType> {
 }
 
 export interface ConnectionFieldInfo extends TypeField {
-  edgeTypeInfo: TableTypeInfo;
+  edgeTypeInfo: TypeInfo<GraphQLObjectType>;
   relationDirective?: DirectiveNode;
   nodeBackrefField?: FieldType;
   nodeBackrefJoin?: [FieldType, FieldType][];

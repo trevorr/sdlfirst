@@ -147,6 +147,7 @@ type UpdateAPayload {
       cursor: String!
       node: EventCategory!
       inferred: Boolean! @generatedDefault
+      createdAt: Int! @createdAt
     }
     
     type EventCategoryConnection {
@@ -167,7 +168,13 @@ type Mutation {
 """Automatically generated input type for Mutation.createEvent"""
 input CreateEventInput {
   clientMutationId: String
+  categories: [CreateEventCategoryEdgeInput!]
   categoryIds: [ID!] @wkidRef(maxLength: 60, type: "EventCategory")
+}
+"""Automatically generated input type for EventCategoryEdge"""
+input CreateEventCategoryEdgeInput {
+  id: ID! @wkidRef(maxLength: 60, type: "EventCategory")
+  inferred: Boolean
 }
 """Automatically generated output type for Mutation.createEvent"""
 type CreateEventPayload {
@@ -187,6 +194,7 @@ type EventCategoryEdge {
   cursor: String!
   node: EventCategory!
   inferred: Boolean! @generatedDefault
+  createdAt: Int! @createdAt
 }
 type EventCategory {
   id: ID! @wkid(maxLength: 60)
@@ -231,6 +239,7 @@ type DeleteEventCategoryPayload {
 input UpdateEventInput {
   clientMutationId: String
   id: ID! @ridRef(type: "Event")
+  categories: [CreateEventCategoryEdgeInput!]
   categoryIds: [ID!] @wkidRef(maxLength: 60, type: "EventCategory")
 }
 """Automatically generated output type for Mutation.updateEvent"""
