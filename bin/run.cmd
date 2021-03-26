@@ -1,3 +1,3 @@
 @echo off
 
-node --enable-source-maps "%~dp0\run" %*
+node "%~dp0\run" %*
