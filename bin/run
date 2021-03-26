@@ -1,3 +1,5 @@
-#!/bin/sh
+#!/usr/bin/env node --enable-source-maps
 
-node --enable-source-maps $(dirname $0)/run.js
+require('@oclif/command').run()
+.then(require('@oclif/command/flush'))
+.catch(require('@oclif/errors/handle'))
