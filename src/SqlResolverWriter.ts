@@ -161,7 +161,7 @@ export class SqlResolverWriter {
     if (contextType != null) {
       this.contextType = ts.createTypeReferenceNode(contextType, undefined);
     } else {
-      this.contextType = ts.createTypeLiteralNode(undefined);
+      this.contextType = ts.createKeywordTypeNode(ts.SyntaxKind.UnknownKeyword);
     }
 
     this.formatter = new TsFormatter(config);
@@ -262,7 +262,7 @@ export class SqlResolverWriter {
         parentType = ts.createTypeReferenceNode(PartialType, [this.createSchemaTypeRef(type.name)]);
       } else {
         parentId = this.config.unusedArgPrefix + this.config.parentArgName;
-        parentType = ts.createTypeLiteralNode(undefined);
+        parentType = ts.createKeywordTypeNode(ts.SyntaxKind.UnknownKeyword);
       }
       let argsId, argsType;
       if (field.args.length > 0) {
@@ -270,7 +270,7 @@ export class SqlResolverWriter {
         argsType = this.createSchemaTypeRef(addNamePrefix(type.name, field.name + this.config.argsTypeSuffix));
       } else {
         argsId = ts.createIdentifier(this.config.unusedArgPrefix + this.config.argsArgName);
-        argsType = ts.createTypeLiteralNode(undefined);
+        argsType = ts.createKeywordTypeNode(ts.SyntaxKind.UnknownKeyword);
       }
       const contextId = ts.createIdentifier(this.config.contextArgName);
       const infoId = ts.createIdentifier(this.config.infoArgName);
