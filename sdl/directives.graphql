@@ -131,6 +131,8 @@ Only one field per type may have a @softDelete directive.
 Implicitly read-only (except indirectly by delete mutation).
 """
 directive @softDelete(
+  """Whether to allow permanent/hard deletion, in addition to soft-deletion."""
+  allowPermanent: Boolean
   """
   When deleting records that refer to the soft-deleted object, retain any references in objects of the given types.
   Normally, when hard-deleting an object, any references to it will be removed. If a reference is not nullable,

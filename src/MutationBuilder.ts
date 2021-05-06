@@ -69,6 +69,7 @@ interface FieldDesc {
 
 export const CLIENT_MUTATION_ID = 'clientMutationId';
 export const DELETED_FLAG = 'deleted';
+export const DELETE_PERMANENTLY_FLAG = 'deletePermanently';
 const DEFAULT_MUTATION_TYPE_NAME = 'Mutation';
 
 export class MutationBuilder {
@@ -728,6 +729,18 @@ export class MutationBuilder {
       makeInputFieldConfigEntry(CLIENT_MUTATION_ID, GraphQLString),
       ...toConfigEntries(this.getIdRefFields(type, true)),
     ];
+
+    const typeInfo = this.analyzer.getTypeInfo(type);
+    if (typeInfo.softDeleteField) {
+      const dir = findFirstDirective(typeInfo.softDeleteField, this.config.softDeleteDirective);
+      if (dir) {
+        const permArg = getDirectiveArgument(dir, 'allowPermanent');
+        if (permArg && permArg.value.kind === 'BooleanValue' && permArg.value.value) {
+          fields.push(toConfigEntry({ name: DELETE_PERMANENTLY_FLAG, type: GraphQLBoolean }));
+        }
+      }
+    }
+
     const description = `Automatically generated input type for ${this.mutationTypeName}.delete${type.name}`;
     return new GraphQLInputObjectType({
       name,
