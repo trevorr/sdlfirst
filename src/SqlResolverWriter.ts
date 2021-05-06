@@ -18,6 +18,7 @@ import {
   isInterfaceType,
   isListType,
   isNonNullType,
+  isNullableType,
   isObjectType,
   isScalarType,
   isUnionType,
@@ -507,17 +508,56 @@ export class SqlResolverWriter {
       ts.createCall(trxId, undefined, [ts.createStringLiteral(identityTableMapping.table.name)]),
       idExprs
     );
+    let isSoftDelete;
     if (softDeleteColumn && softDeleteValueExpr) {
       deleteExpr = ts.createCall(ts.createPropertyAccess(deleteExpr, 'update'), undefined, [
         ts.createObjectLiteral([ts.createPropertyAssignment(softDeleteColumn, softDeleteValueExpr)]),
       ]);
+      isSoftDelete = true;
     } else {
       deleteExpr = ts.createCall(ts.createPropertyAccess(deleteExpr, 'del'), undefined, undefined);
+      isSoftDelete = false;
     }
     deleteExpr = this.getExecuteExpression(resolverNodes.contextId, deleteExpr);
-    trxBlock.addStatement(ts.createExpressionStatement(deleteExpr));
+    const deleteStmt = ts.createExpressionStatement(deleteExpr);
+    trxBlock.addStatement(deleteStmt);
 
-    // TODO: cascade delete
+    if (!isSoftDelete) {
+      // TODO: cascade delete
+      const deleteTables = new Set<string>();
+      const nullColumns = new Set<string>();
+      for (const ref of identityTypeInfo.referringFields) {
+        const refTableMapping = this.sqlMappings.getIdentityTableForType(ref.type);
+        if (refTableMapping) {
+          const tableName = refTableMapping.table.name;
+          if (isNullableType(ref.field.type)) {
+            const refFieldMapping = refTableMapping.fieldMappings.get(ref.field);
+            if (refFieldMapping) {
+              if (isColumns(refFieldMapping)) {
+                nullColumns.add(`${tableName}.${refFieldMapping.columns.map((c) => c.name).join(',')}`);
+              } else {
+                deleteTables.add(refFieldMapping.toTable.table.name);
+              }
+            }
+          } else {
+            deleteTables.add(tableName);
+          }
+        }
+      }
+      if (deleteTables.size > 0 || nullColumns.size > 0) {
+        const commentLines = ['TODO: cascade delete'];
+        if (deleteTables.size > 0) {
+          commentLines.push('Delete from tables:');
+          commentLines.push(...Array.from(deleteTables).sort());
+        }
+        if (nullColumns.size > 0) {
+          commentLines.push('Null columns:');
+          commentLines.push(...Array.from(nullColumns).sort());
+        }
+        commentLines.push('');
+        ts.addSyntheticLeadingComment(deleteStmt, ts.SyntaxKind.MultiLineCommentTrivia, commentLines.join('\n'), true);
+      }
+    }
 
     // return true
     trxBlock.addStatement(ts.createReturn(ts.createTrue()));
