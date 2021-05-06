@@ -45,8 +45,8 @@
     "singleQuote": true
   },
   "dependencies": {
-    "@graphql-codegen/core": "^1.10.0",
-    "@graphql-codegen/typescript": "^1.10.0",
+    "@graphql-codegen/core": "^1.17.9",
+    "@graphql-codegen/typescript": "^1.22.0",
     "@oclif/command": "^1.5.19",
     "@oclif/config": "^1.13.3",
     "@oclif/plugin-help": "^2.2.3",
@@ -54,7 +54,7 @@
     "@types/prettier": "^1.19.0",
     "diff": "^4.0.1",
     "graphql": "^14.5.8",
-    "graphql-import": "github:trevorr/graphql-import#v0.7.1-enum-value-directive",
+    "graphql-import": "^1.0.2",
     "graphql-tools": "^6.2.2",
     "pascal-case": "^3.1.1",
     "pluralize": "^8.0.0",
@@ -65,7 +65,7 @@
     "typescript-memoize": "^1.0.0-alpha.3"
   },
   "devDependencies": {
-    "@oclif/dev-cli": "^1.22.2",
+    "@oclif/dev-cli": "^1.26.0",
     "@oclif/test": "^1.2.5",
     "@types/chai": "^4.2.7",
     "@types/diff": "^4.0.2",
