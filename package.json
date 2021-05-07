@@ -61,7 +61,7 @@
     "prettier": "^2.0.5",
     "snake-case": "^3.0.3",
     "tslib": "^1.10.0",
-    "typescript": "^3.7.4",
+    "typescript": "^3.9.9",
     "typescript-memoize": "^1.0.0-alpha.3"
   },
   "devDependencies": {
