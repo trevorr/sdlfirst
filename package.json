@@ -60,7 +60,7 @@
     "pluralize": "^8.0.0",
     "prettier": "^2.0.5",
     "snake-case": "^3.0.3",
-    "tslib": "^1.10.0",
+    "tslib": "^1.14.1",
     "typescript": "^3.7.4",
     "typescript-memoize": "^1.0.0-alpha.3"
   },
