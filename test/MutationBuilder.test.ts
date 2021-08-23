@@ -72,9 +72,25 @@ describe('MutationBuilder', () => {
     expect(printMutationTypes(schema)).to.equal(
       `"""Automatically generated mutations"""
 type Mutation {
-  createA(input: CreateAInput!): CreateAPayload!
-  deleteA(input: DeleteAInput!): DeleteAPayload!
-  updateA(input: UpdateAInput!): UpdateAPayload!
+  """Creates a new A object"""
+  createA(
+    """Input object containing the field values for the new object"""
+    input: CreateAInput!
+  ): CreateAPayload!
+
+  """Deletes an existing A object"""
+  deleteA(
+    """Input object containing the ID of the object to delete"""
+    input: DeleteAInput!
+  ): DeleteAPayload!
+
+  """Updates an existing A object"""
+  updateA(
+    """
+    Input object containing the ID of the object to update and the new field values
+    """
+    input: UpdateAInput!
+  ): UpdateAPayload!
 }
 """Automatically generated input type for Mutation.createA"""
 input CreateAInput {
@@ -87,7 +103,10 @@ input CreateNestedBInput {
 }
 """Automatically generated output type for Mutation.createA"""
 type CreateAPayload {
+  """The arbitrary client identifier provided in the mutation input object"""
   clientMutationId: String
+
+  """The newly created A object"""
   a: A!
 }
 type A {
@@ -104,7 +123,12 @@ input DeleteAInput {
 }
 """Automatically generated output type for Mutation.deleteA"""
 type DeleteAPayload {
+  """The arbitrary client identifier provided in the mutation input object"""
   clientMutationId: String
+
+  """
+  Indicates whether an object with the given identifier was found and deleted
+  """
   deleted: Boolean!
 }
 """Automatically generated input type for Mutation.updateA"""
@@ -119,7 +143,10 @@ input UpdateNestedBInput {
 }
 """Automatically generated output type for Mutation.updateA"""
 type UpdateAPayload {
+  """The arbitrary client identifier provided in the mutation input object"""
   clientMutationId: String
+
+  """The updated A object"""
   a: A!
 }`
     );
@@ -158,12 +185,45 @@ type UpdateAPayload {
     expect(printMutationTypes(schema)).to.equal(
       `"""Automatically generated mutations"""
 type Mutation {
-  createEvent(input: CreateEventInput!): CreateEventPayload!
-  createEventCategory(input: CreateEventCategoryInput!): CreateEventCategoryPayload!
-  deleteEvent(input: DeleteEventInput!): DeleteEventPayload!
-  deleteEventCategory(input: DeleteEventCategoryInput!): DeleteEventCategoryPayload!
-  updateEvent(input: UpdateEventInput!): UpdateEventPayload!
-  updateEventCategory(input: UpdateEventCategoryInput!): UpdateEventCategoryPayload!
+  """Creates a new Event object"""
+  createEvent(
+    """Input object containing the field values for the new object"""
+    input: CreateEventInput!
+  ): CreateEventPayload!
+
+  """Creates a new EventCategory object"""
+  createEventCategory(
+    """Input object containing the field values for the new object"""
+    input: CreateEventCategoryInput!
+  ): CreateEventCategoryPayload!
+
+  """Deletes an existing Event object"""
+  deleteEvent(
+    """Input object containing the ID of the object to delete"""
+    input: DeleteEventInput!
+  ): DeleteEventPayload!
+
+  """Deletes an existing EventCategory object"""
+  deleteEventCategory(
+    """Input object containing the ID of the object to delete"""
+    input: DeleteEventCategoryInput!
+  ): DeleteEventCategoryPayload!
+
+  """Updates an existing Event object"""
+  updateEvent(
+    """
+    Input object containing the ID of the object to update and the new field values
+    """
+    input: UpdateEventInput!
+  ): UpdateEventPayload!
+
+  """Updates an existing EventCategory object"""
+  updateEventCategory(
+    """
+    Input object containing the ID of the object to update and the new field values
+    """
+    input: UpdateEventCategoryInput!
+  ): UpdateEventCategoryPayload!
 }
 """Automatically generated input type for Mutation.createEvent"""
 input CreateEventInput {
@@ -178,7 +238,10 @@ input CreateEventCategoryEdgeInput {
 }
 """Automatically generated output type for Mutation.createEvent"""
 type CreateEventPayload {
+  """The arbitrary client identifier provided in the mutation input object"""
   clientMutationId: String
+
+  """The newly created Event object"""
   event: Event!
 }
 type Event {
@@ -212,7 +275,10 @@ input CreateEventCategoryInput {
 }
 """Automatically generated output type for Mutation.createEventCategory"""
 type CreateEventCategoryPayload {
+  """The arbitrary client identifier provided in the mutation input object"""
   clientMutationId: String
+
+  """The newly created EventCategory object"""
   eventCategory: EventCategory!
 }
 """Automatically generated input type for Mutation.deleteEvent"""
@@ -222,7 +288,12 @@ input DeleteEventInput {
 }
 """Automatically generated output type for Mutation.deleteEvent"""
 type DeleteEventPayload {
+  """The arbitrary client identifier provided in the mutation input object"""
   clientMutationId: String
+
+  """
+  Indicates whether an object with the given identifier was found and deleted
+  """
   deleted: Boolean!
 }
 """Automatically generated input type for Mutation.deleteEventCategory"""
@@ -232,7 +303,12 @@ input DeleteEventCategoryInput {
 }
 """Automatically generated output type for Mutation.deleteEventCategory"""
 type DeleteEventCategoryPayload {
+  """The arbitrary client identifier provided in the mutation input object"""
   clientMutationId: String
+
+  """
+  Indicates whether an object with the given identifier was found and deleted
+  """
   deleted: Boolean!
 }
 """Automatically generated input type for Mutation.updateEvent"""
@@ -244,7 +320,10 @@ input UpdateEventInput {
 }
 """Automatically generated output type for Mutation.updateEvent"""
 type UpdateEventPayload {
+  """The arbitrary client identifier provided in the mutation input object"""
   clientMutationId: String
+
+  """The updated Event object"""
   event: Event!
 }
 """Automatically generated input type for Mutation.updateEventCategory"""
@@ -256,7 +335,10 @@ input UpdateEventCategoryInput {
 }
 """Automatically generated output type for Mutation.updateEventCategory"""
 type UpdateEventCategoryPayload {
+  """The arbitrary client identifier provided in the mutation input object"""
   clientMutationId: String
+
+  """The updated EventCategory object"""
   eventCategory: EventCategory!
 }`
     );
