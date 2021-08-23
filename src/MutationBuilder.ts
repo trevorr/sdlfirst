@@ -64,12 +64,20 @@ type FieldType = GraphQLField<any, any>;
 interface FieldDesc {
   name: string;
   type: GraphQLInputType;
+  description: string | null | undefined;
   directive?: DirectiveNode;
 }
 
 export const CLIENT_MUTATION_ID = 'clientMutationId';
+const CLIENT_MUTATION_ID_INPUT_DESCRIPTION = 'An arbitrary client identifier to be returned with the mutation result';
+const CLIENT_MUTATION_ID_PAYLOAD_DESCRIPTION = 'The arbitrary client identifier provided in the mutation input object';
+
 export const DELETED_FLAG = 'deleted';
+const DELETED_FLAG_DESCRIPTION = 'Indicates whether an object with the given identifier was found and deleted';
 export const DELETE_PERMANENTLY_FLAG = 'deletePermanently';
+const DELETE_PERMANENTLY_DESCRIPTION =
+  'Indicates whether the object should be deleted permanently, as opposed to being soft-deleted';
+
 const DEFAULT_MUTATION_TYPE_NAME = 'Mutation';
 
 export class MutationBuilder {
@@ -132,17 +140,29 @@ export class MutationBuilder {
             fields.push([
               `create${type.name}`,
               {
+                description: `Creates a new ${type.name} object`,
                 type: new GraphQLNonNull(
                   new GraphQLObjectType({
                     name: `Create${type.name}Payload`,
                     description: `Automatically generated output type for ${this.mutationTypeName}.create${type.name}`,
                     fields: {
-                      [CLIENT_MUTATION_ID]: { type: GraphQLString },
-                      [lcFirst(type.name)]: { type: new GraphQLNonNull(type) },
+                      [CLIENT_MUTATION_ID]: {
+                        type: GraphQLString,
+                        description: CLIENT_MUTATION_ID_PAYLOAD_DESCRIPTION,
+                      },
+                      [lcFirst(type.name)]: {
+                        type: new GraphQLNonNull(type),
+                        description: `The newly created ${type.name} object`,
+                      },
                     },
                   })
                 ),
-                args: { input: { type: new GraphQLNonNull(createType) } },
+                args: {
+                  input: {
+                    type: new GraphQLNonNull(createType),
+                    description: 'Input object containing the field values for the new object',
+                  },
+                },
               },
             ]);
           }
@@ -155,17 +175,29 @@ export class MutationBuilder {
             fields.push([
               updateName,
               {
+                description: `Updates an existing ${type.name} object`,
                 type: new GraphQLNonNull(
                   new GraphQLObjectType({
                     name: `Update${type.name}Payload`,
                     description: `Automatically generated output type for ${this.mutationTypeName}.update${type.name}`,
                     fields: {
-                      [CLIENT_MUTATION_ID]: { type: GraphQLString },
-                      [lcFirst(type.name)]: { type: new GraphQLNonNull(type) },
+                      [CLIENT_MUTATION_ID]: {
+                        type: GraphQLString,
+                        description: CLIENT_MUTATION_ID_PAYLOAD_DESCRIPTION,
+                      },
+                      [lcFirst(type.name)]: {
+                        type: new GraphQLNonNull(type),
+                        description: `The updated ${type.name} object`,
+                      },
                     },
                   })
                 ),
-                args: { input: { type: new GraphQLNonNull(updateType) } },
+                args: {
+                  input: {
+                    type: new GraphQLNonNull(updateType),
+                    description: 'Input object containing the ID of the object to update and the new field values',
+                  },
+                },
               },
             ]);
           }
@@ -178,17 +210,29 @@ export class MutationBuilder {
             fields.push([
               deleteName,
               {
+                description: `Deletes an existing ${type.name} object`,
                 type: new GraphQLNonNull(
                   new GraphQLObjectType({
                     name: `Delete${type.name}Payload`,
                     description: `Automatically generated output type for ${this.mutationTypeName}.delete${type.name}`,
                     fields: {
-                      [CLIENT_MUTATION_ID]: { type: GraphQLString },
-                      [DELETED_FLAG]: { type: new GraphQLNonNull(GraphQLBoolean) },
+                      [CLIENT_MUTATION_ID]: {
+                        type: GraphQLString,
+                        description: CLIENT_MUTATION_ID_PAYLOAD_DESCRIPTION,
+                      },
+                      [DELETED_FLAG]: {
+                        type: new GraphQLNonNull(GraphQLBoolean),
+                        description: DELETED_FLAG_DESCRIPTION,
+                      },
                     },
                   })
                 ),
-                args: { input: { type: new GraphQLNonNull(deleteType) } },
+                args: {
+                  input: {
+                    type: new GraphQLNonNull(deleteType),
+                    description: 'Input object containing the ID of the object to delete',
+                  },
+                },
               },
             ]);
           }
@@ -231,7 +275,9 @@ export class MutationBuilder {
     if (!fields.length) return null;
 
     if (!nested) {
-      fields.unshift(makeInputFieldConfigEntry(CLIENT_MUTATION_ID, GraphQLString));
+      fields.unshift(
+        makeInputFieldConfigEntry(CLIENT_MUTATION_ID, GraphQLString, CLIENT_MUTATION_ID_INPUT_DESCRIPTION)
+      );
     }
 
     const description = `Automatically generated input type for ${this.mutationTypeName}.create${type.name}`;
@@ -253,7 +299,7 @@ export class MutationBuilder {
       return result;
     }
 
-    const { name } = field;
+    const { name, description } = field;
     let { type } = field;
     let nonNull = false;
     if (isNonNullType(type)) {
@@ -268,7 +314,7 @@ export class MutationBuilder {
       if (nonNull) {
         inputType = new GraphQLNonNull(inputType);
       }
-      result.push(makeInputFieldConfigEntry(fieldName, inputType, inputDir && [inputDir]));
+      result.push(makeInputFieldConfigEntry(fieldName, inputType, description, inputDir && [inputDir]));
     };
 
     // treat connections as non-null lists if they are many-to-many or have a nested create directive
@@ -348,7 +394,9 @@ export class MutationBuilder {
       if (typeInfo.hasIdentity || !isObjectType(namedType)) {
         try {
           if (!isList) {
-            return toConfigEntries(this.getIdRefFields(namedType, nonNull, name));
+            return toConfigEntries(
+              this.getIdRefFields(namedType, nonNull, { namePrefix: name, prefixType: parentType, description })
+            );
           } else {
             const idRefs = this.getIdRefFields(namedType, false);
 
@@ -411,8 +459,10 @@ export class MutationBuilder {
     if (!fields.length) return null;
 
     if (!nested) {
-      fields.unshift(...toConfigEntries(this.getIdRefFields(type, true)));
-      fields.unshift(makeInputFieldConfigEntry(CLIENT_MUTATION_ID, GraphQLString));
+      fields.unshift(...toConfigEntries(this.getIdRefFields(type, true, { descriptionSuffix: ' to update' })));
+      fields.unshift(
+        makeInputFieldConfigEntry(CLIENT_MUTATION_ID, GraphQLString, CLIENT_MUTATION_ID_INPUT_DESCRIPTION)
+      );
     }
 
     const description = `Automatically generated input type for ${this.mutationTypeName}.update${type.name}`;
@@ -444,7 +494,7 @@ export class MutationBuilder {
       return result;
     }
 
-    const { name } = field;
+    const { name, description } = field;
     let { type } = field;
     if (isNonNullType(type)) {
       type = type.ofType;
@@ -454,7 +504,7 @@ export class MutationBuilder {
     let isList = wrapped.wrappers.length > 0;
     const addResult = (inputType: GraphQLInputType, inputDir?: DirectiveNode, fieldName = name): void => {
       inputType = wrapType(inputType, wrapped.wrappers) as GraphQLInputType;
-      result.push(makeInputFieldConfigEntry(fieldName, inputType, inputDir && [inputDir]));
+      result.push(makeInputFieldConfigEntry(fieldName, inputType, description, inputDir && [inputDir]));
     };
 
     // treat connections as non-null lists if they are many-to-many or have a nested update directive
@@ -498,7 +548,9 @@ export class MutationBuilder {
       if (typeInfo.hasIdentity || !isObjectType(namedType)) {
         try {
           if (!isList) {
-            return toConfigEntries(this.getIdRefFields(namedType, false, name));
+            return toConfigEntries(
+              this.getIdRefFields(namedType, false, { namePrefix: name, prefixType: parentType, description })
+            );
           } else {
             const idRefs = this.getIdRefFields(namedType, false);
 
@@ -573,7 +625,17 @@ export class MutationBuilder {
     return result;
   }
 
-  private getIdRefFields(type: GraphQLCompositeType, nonNull: boolean, namePrefix?: string): FieldDesc[] {
+  private getIdRefFields(
+    type: GraphQLCompositeType,
+    nonNull: boolean,
+    options: {
+      namePrefix?: string;
+      prefixType?: GraphQLCompositeType;
+      description?: string | null;
+      descriptionSuffix?: string | null;
+    } = {}
+  ): FieldDesc[] {
+    const { namePrefix, prefixType, description, descriptionSuffix } = options;
     const typeInfo = this.analyzer.getTypeInfo(type);
     const { externalIdField } = typeInfo;
     if (externalIdField) {
@@ -586,13 +648,18 @@ export class MutationBuilder {
         fieldType = new GraphQLNonNull(fieldType);
       }
       return [
-        { name, type: fieldType, directive: this.getExternalIdRefDirective(typeInfo.externalIdDirective!, type.name)! },
+        {
+          name,
+          type: fieldType,
+          description: description || this.getIdDescription(type, { namePrefix, prefixType, descriptionSuffix }),
+          directive: this.getExternalIdRefDirective(typeInfo.externalIdDirective!, type.name)!,
+        },
       ];
     }
 
     const { internalIdFields } = typeInfo;
     if (internalIdFields) {
-      return internalIdFields.flatMap((field) => this.getIdRefFieldsFor(field, type, nonNull, namePrefix));
+      return internalIdFields.flatMap((field) => this.getIdRefFieldsFor(field, type, nonNull, namePrefix, prefixType));
     }
 
     // see if all object types of an interface or union have a common external ID type
@@ -606,7 +673,14 @@ export class MutationBuilder {
           if (nonNull) {
             fieldType = new GraphQLNonNull(fieldType);
           }
-          return [{ name, type: fieldType, directive: this.getExternalIdRefDirective(dir, type.name) }];
+          return [
+            {
+              name,
+              type: fieldType,
+              description: description || this.getIdDescription(type, { namePrefix, prefixType, descriptionSuffix }),
+              directive: this.getExternalIdRefDirective(dir, type.name),
+            },
+          ];
         }
       } catch (e) {
         throw new Error(`Unable to reference type "${type.name}": ${e.message}`);
@@ -616,11 +690,35 @@ export class MutationBuilder {
     throw new Error(`No ID fields for referenced type "${type.name}"`);
   }
 
+  private getIdDescription(
+    type: GraphQLCompositeType,
+    options: {
+      namePrefix?: string;
+      prefixType?: GraphQLCompositeType;
+      descriptionSuffix?: string | null;
+    } = {}
+  ): string {
+    const { namePrefix, prefixType, descriptionSuffix } = options;
+    let description = `The ID of the ${type.name}`;
+    if (namePrefix) {
+      description += ' for ';
+      if (prefixType) {
+        description += `${prefixType.name}.`;
+      }
+      description += namePrefix;
+    }
+    if (descriptionSuffix) {
+      description += descriptionSuffix;
+    }
+    return description;
+  }
+
   private getIdRefFieldsFor(
     field: FieldType,
     type: GraphQLCompositeType,
     nonNull: boolean,
-    namePrefix?: string
+    namePrefix?: string,
+    prefixType?: GraphQLCompositeType
   ): FieldDesc[] {
     let name = field.name;
     if (namePrefix && !name.startsWith(namePrefix)) {
@@ -631,10 +729,17 @@ export class MutationBuilder {
       if (nonNull) {
         fieldType = new GraphQLNonNull(fieldType);
       }
-      return [{ name, type: fieldType, directive: this.getIdRefDirective(type.name, field.name) }];
+      return [
+        {
+          name,
+          type: fieldType,
+          description: field.description,
+          directive: this.getIdRefDirective(type.name, field.name),
+        },
+      ];
     }
     if (isCompositeType(fieldType)) {
-      return this.getIdRefFields(fieldType, nonNull, name);
+      return this.getIdRefFields(fieldType, nonNull, { namePrefix: name, prefixType, description: field.description });
     }
     throw new Error(`Unexpected type for ID field ${type.name}.${field.name}`);
   }
@@ -726,8 +831,8 @@ export class MutationBuilder {
     }
 
     const fields: [string, GraphQLInputFieldConfig][] = [
-      makeInputFieldConfigEntry(CLIENT_MUTATION_ID, GraphQLString),
-      ...toConfigEntries(this.getIdRefFields(type, true)),
+      makeInputFieldConfigEntry(CLIENT_MUTATION_ID, GraphQLString, CLIENT_MUTATION_ID_INPUT_DESCRIPTION),
+      ...toConfigEntries(this.getIdRefFields(type, true, { descriptionSuffix: ' to delete' })),
     ];
 
     const typeInfo = this.analyzer.getTypeInfo(type);
@@ -736,7 +841,13 @@ export class MutationBuilder {
       if (dir) {
         const permArg = getDirectiveArgument(dir, 'allowPermanent');
         if (permArg && permArg.value.kind === 'BooleanValue' && permArg.value.value) {
-          fields.push(toConfigEntry({ name: DELETE_PERMANENTLY_FLAG, type: GraphQLBoolean }));
+          fields.push(
+            toConfigEntry({
+              name: DELETE_PERMANENTLY_FLAG,
+              type: GraphQLBoolean,
+              description: DELETE_PERMANENTLY_DESCRIPTION,
+            })
+          );
         }
       }
     }
@@ -837,15 +948,16 @@ function toConfigEntries(f: FieldDesc[]): [string, GraphQLInputFieldConfig][] {
 }
 
 function toConfigEntry(f: FieldDesc): [string, GraphQLInputFieldConfig] {
-  return makeInputFieldConfigEntry(f.name, f.type, f.directive && [f.directive]);
+  return makeInputFieldConfigEntry(f.name, f.type, f.description, f.directive && [f.directive]);
 }
 
 function makeInputFieldConfigEntry(
   name: string,
   type: GraphQLInputType,
+  description: string | null | undefined,
   directives?: DirectiveNode[]
 ): [string, GraphQLInputFieldConfig] {
-  return [name, { type: type, astNode: makeInputValueDefinitionNode(name, type, directives) }];
+  return [name, { type, description, astNode: makeInputValueDefinitionNode(name, type, directives) }];
 }
 
 function makeInputValueDefinitionNode(
