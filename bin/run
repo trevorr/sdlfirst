@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env -S node --enable-source-maps
 
 require('@oclif/command').run()
 .then(require('@oclif/command/flush'))
