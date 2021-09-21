@@ -14,7 +14,7 @@ $ npm install -g sdlfirst
 $ sdlfirst COMMAND
 running command...
 $ sdlfirst (-v|--version|version)
-sdlfirst/0.0.1 darwin-x64 node-v12.18.4
+sdlfirst/0.0.1 linux-x64 node-v14.17.3
 $ sdlfirst --help [COMMAND]
 USAGE
   $ sdlfirst COMMAND
@@ -40,8 +40,9 @@ USAGE
   $ sdlfirst augment FILE
 
 OPTIONS
-  -h, --help           show CLI help
-  -o, --output=output  [default: genschema/schema.graphql] output filename
+  -a, --audience=audience  target audience
+  -h, --help               show CLI help
+  -o, --output=output      [default: genschema/schema.graphql] output filename
 
 EXAMPLE
   $ sdlfirst augment schema/schema.graphql

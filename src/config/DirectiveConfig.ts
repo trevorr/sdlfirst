@@ -1,4 +1,5 @@
 export interface DirectiveConfig {
+  audienceDirective: string;
   autoincDirective: string;
   createdAtDirective: string;
   createDirective: string;
@@ -38,6 +39,7 @@ export interface DirectiveConfig {
 }
 
 export const defaultConfig: DirectiveConfig = {
+  audienceDirective: 'audience',
   autoincDirective: 'autoinc',
   createdAtDirective: 'createdAt',
   createDirective: 'create',

@@ -1,6 +1,7 @@
 import { DocumentNode, GraphQLSchema } from 'graphql';
 import path from 'path';
 import { Analyzer } from './Analyzer';
+import { AudienceFilter } from './AudienceFilter';
 import { defaultConfig as defaultDirectiveConfig, DirectiveConfig } from './config/DirectiveConfig';
 import { defaultConfig as defaultPathConfig, PathConfig } from './config/PathConfig';
 import { SqlConfig } from './config/SqlConfig';
@@ -17,16 +18,20 @@ import { mkdir, writeFile } from './util/fs-util';
 import { printSchemaUsingAst } from './util/printSchema';
 
 export default class SDLFirst {
-  private readonly analyzer: Analyzer;
-  private sqlMappings: SqlSchemaMappings | null = null;
+  private readonly directiveConfig: DirectiveConfig;
+  private analyzer: Analyzer | undefined;
+  private sqlMappings: SqlSchemaMappings | undefined;
 
   constructor(private schema: GraphQLSchema, config?: Partial<DirectiveConfig>) {
-    const analyzerConfig = Object.assign({}, defaultDirectiveConfig, config);
-    this.analyzer = new Analyzer(schema, analyzerConfig);
+    this.directiveConfig = Object.assign({}, defaultDirectiveConfig, config);
+  }
+
+  public filterAudience(audience: string): GraphQLSchema {
+    return (this.schema = new AudienceFilter(this.schema, this.directiveConfig, audience).filterAudience());
   }
 
   public addMutations(): GraphQLSchema {
-    return (this.schema = new MutationBuilder(this.schema, this.analyzer).addMutations());
+    return (this.schema = new MutationBuilder(this.schema, this.getAnalyzer()).addMutations());
   }
 
   public addInternalIds(config?: Partial<SqlConfig>): GraphQLSchema {
@@ -49,19 +54,19 @@ export default class SDLFirst {
   }
 
   public writeEnumMappings(config?: Partial<SqlEnumMappingConfig>): Promise<string[]> {
-    return new SqlEnumMappingWriter(this.schema, this.analyzer, config).writeMappings();
+    return new SqlEnumMappingWriter(this.schema, this.getAnalyzer(), config).writeMappings();
   }
 
   public writeFieldVisitors(config?: Partial<FieldVisitorConfig>): Promise<string[]> {
-    return new FieldVisitorWriter(this.analyzer, this.getSqlMappings(config), config).writeVisitors();
+    return new FieldVisitorWriter(this.getAnalyzer(), this.getSqlMappings(config), config).writeVisitors();
   }
 
   public writeResolvers(config?: Partial<SqlResolverConfig>): Promise<string[]> {
-    return new SqlResolverWriter(this.schema, this.analyzer, this.getSqlMappings(config), config).writeResolvers();
+    return new SqlResolverWriter(this.schema, this.getAnalyzer(), this.getSqlMappings(config), config).writeResolvers();
   }
 
   public writeSqlMetadata(config?: Partial<SqlMetadataConfig>): Promise<string[]> {
-    return new SqlMetadataWriter(this.analyzer, this.getSqlMappings(config), config).writeMetadata();
+    return new SqlMetadataWriter(this.getAnalyzer(), this.getSqlMappings(config), config).writeMetadata();
   }
 
   public writeSqlTables(config?: Partial<SqlConfig & PathConfig>): Promise<string[]> {
@@ -69,9 +74,16 @@ export default class SDLFirst {
     return new SqlTableWriter(config).writeTables(tables);
   }
 
+  private getAnalyzer(): Analyzer {
+    if (!this.analyzer) {
+      this.analyzer = new Analyzer(this.schema, this.directiveConfig);
+    }
+    return this.analyzer;
+  }
+
   private getSqlMappings(config?: Partial<SqlConfig>): SqlSchemaMappings {
     if (!this.sqlMappings) {
-      this.sqlMappings = new SqlSchemaBuilder(this.analyzer, config).generateTables();
+      this.sqlMappings = new SqlSchemaBuilder(this.getAnalyzer(), config).generateTables();
     }
     return this.sqlMappings;
   }

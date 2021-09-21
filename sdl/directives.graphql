@@ -355,3 +355,19 @@ directive @useManyToMany(
   """
   tableName: String!
 ) on FIELD_DEFINITION
+
+"""
+Identifies the user audiences for a type definition.
+Only one of `include` or `exclude` should be specified.
+If both are specified, `include` takes precedence.
+"""
+directive @audience(
+  """
+  Specifies the list of user audiences that are targeted by the annotated type. All other audiences are excluded.
+  """
+  include: [String!]
+  """
+  Specifies the list of user audiences that are excluded from the annotated type. All other audiences are included.
+  """
+  exclude: [String!]
+) on SCALAR | OBJECT | FIELD_DEFINITION | INTERFACE | UNION | ENUM | ENUM_VALUE | INPUT_OBJECT | INPUT_FIELD_DEFINITION

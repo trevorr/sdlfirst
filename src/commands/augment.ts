@@ -23,6 +23,10 @@ Augmented schema written to ${defaultOutput}
       description: 'output filename',
       default: defaultOutput,
     }),
+    audience: flags.string({
+      char: 'a',
+      description: 'target audience',
+    }),
   };
 
   static args = [{ name: 'file', required: true }];
@@ -30,7 +34,7 @@ Augmented schema written to ${defaultOutput}
   async run(): Promise<void> {
     const {
       args,
-      flags: { output },
+      flags: { output, audience },
     } = this.parse(Augment);
     const inputSource = importSchema(args.file);
     const inputAst = parse(inputSource);
@@ -41,8 +45,13 @@ Augmented schema written to ${defaultOutput}
       config.sdlOutputFile = basename(output);
     }
     const sdlFirst = new SDLFirst(inputSchema);
+    if (audience) {
+      sdlFirst.filterAudience(audience);
+    }
     sdlFirst.addMutations();
-    sdlFirst.addInternalIds();
+    if (!audience || audience === 'internal') {
+      sdlFirst.addInternalIds();
+    }
     sdlFirst.writeSchema(config);
     this.log(`Augmented schema written to ${output}`);
   }

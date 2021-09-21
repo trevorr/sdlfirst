@@ -1,6 +1,6 @@
 import { ArgumentNode, ASTNode, DirectiveNode, Location } from 'graphql';
 
-interface WithDirectives {
+export interface WithDirectives {
   astNode?: {
     readonly directives?: ReadonlyArray<DirectiveNode>;
   } | null;
