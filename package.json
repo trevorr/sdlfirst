@@ -47,7 +47,7 @@
   "dependencies": {
     "@graphql-codegen/core": "^1.17.9",
     "@graphql-codegen/typescript": "^1.22.0",
-    "@oclif/command": "^1.5.19",
+    "@oclif/command": "^1.8.0",
     "@oclif/config": "^1.13.3",
     "@oclif/plugin-help": "^2.2.3",
     "@types/pluralize": "0.0.29",
