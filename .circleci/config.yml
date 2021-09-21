@@ -19,10 +19,10 @@ jobs:
       - run:
           name: Testing
           command: npm test
-  node-12:
+  node-14:
     <<: *test
     docker:
-      - image: node:12
+      - image: node:14
   cache:
     <<: *test
     steps:
@@ -42,7 +42,7 @@ workflows:
   "sdlfirst":
     jobs:
       - node-latest
-      - node-12
+      - node-14
       - cache:
           filters:
             tags:
