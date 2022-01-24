@@ -388,10 +388,10 @@ export class SqlResolverWriter {
   }
 
   private getMutationInputType(field: FieldType): GraphQLInputObjectType | null {
-    if (field.args.length === 1) {
-      const [arg] = field.args;
+    const arg = field.args.find((arg) => arg.name === 'input');
+    if (arg && isNonNullType(arg.type)) {
       const argType = getNullableType(arg.type);
-      if (arg.name === 'input' && isNonNullType(arg.type) && isInputObjectType(argType)) {
+      if (isInputObjectType(argType)) {
         return argType;
       }
     }

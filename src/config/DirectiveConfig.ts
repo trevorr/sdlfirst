@@ -14,6 +14,7 @@ export interface DirectiveConfig {
   immutableDirective: string;
   intRangeDirective: string;
   lengthDirective: string;
+  mutationDirective: string;
   newManyToManyDirective: string;
   oneToManyDirective: string;
   randomIdDirective: string;
@@ -54,6 +55,7 @@ export const defaultConfig: DirectiveConfig = {
   immutableDirective: 'immutable',
   intRangeDirective: 'intRange',
   lengthDirective: 'length',
+  mutationDirective: 'mutation',
   newManyToManyDirective: 'newManyToMany',
   oneToManyDirective: 'oneToMany',
   randomIdDirective: 'rid',

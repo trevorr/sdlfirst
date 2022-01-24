@@ -12,6 +12,7 @@ import {
   GraphQLCompositeType,
   GraphQLField,
   GraphQLFieldConfig,
+  GraphQLFieldConfigArgumentMap,
   GraphQLInputFieldConfig,
   GraphQLInputObjectType,
   GraphQLInputType,
@@ -69,6 +70,12 @@ interface FieldDesc {
   type: GraphQLInputType;
   description: string | null | undefined;
   directive?: ConstDirectiveNode;
+}
+
+interface MutationConfig {
+  input?: GraphQLInputObjectType | null;
+  options?: GraphQLInputObjectType | null;
+  payload?: GraphQLObjectType | null;
 }
 
 export const CLIENT_MUTATION_ID = 'clientMutationId';
@@ -135,107 +142,131 @@ export class MutationBuilder {
     for (const typeInfo of this.analyzer.getTypeInfos()) {
       if (this.isConcreteEntityTable(typeInfo)) {
         const { type } = typeInfo;
-        // TODO: @create
         const createName = `create${type.name}`;
         if (!existingSet.has(createName)) {
-          const createType = this.getCreateType(type);
+          const config = this.getMutationConfig(type, 'create');
+          const createType = config.input ?? this.getCreateType(type);
           if (createType) {
+            const args: GraphQLFieldConfigArgumentMap = {
+              input: {
+                type: new GraphQLNonNull(createType),
+                description: 'Input object containing the field values for the new object',
+              },
+            };
+            if (config.options) {
+              args.options = {
+                type: config.options,
+                description: 'Creation options',
+              };
+            }
             fields.push([
               `create${type.name}`,
               {
                 description: `Creates a new ${type.name} object`,
                 type: new GraphQLNonNull(
-                  new GraphQLObjectType({
-                    name: `Create${type.name}Payload`,
-                    description: `Automatically generated output type for ${this.mutationTypeName}.create${type.name}`,
-                    fields: {
-                      [CLIENT_MUTATION_ID]: {
-                        type: GraphQLString,
-                        description: CLIENT_MUTATION_ID_PAYLOAD_DESCRIPTION,
+                  config.payload ??
+                    new GraphQLObjectType({
+                      name: `Create${type.name}Payload`,
+                      description: `Automatically generated output type for ${this.mutationTypeName}.create${type.name}`,
+                      fields: {
+                        [CLIENT_MUTATION_ID]: {
+                          type: GraphQLString,
+                          description: CLIENT_MUTATION_ID_PAYLOAD_DESCRIPTION,
+                        },
+                        [lcFirst(type.name)]: {
+                          type: new GraphQLNonNull(type),
+                          description: `The newly created ${type.name} object`,
+                        },
                       },
-                      [lcFirst(type.name)]: {
-                        type: new GraphQLNonNull(type),
-                        description: `The newly created ${type.name} object`,
-                      },
-                    },
-                  })
+                    })
                 ),
-                args: {
-                  input: {
-                    type: new GraphQLNonNull(createType),
-                    description: 'Input object containing the field values for the new object',
-                  },
-                },
+                args,
               },
             ]);
           }
         }
-        // TODO: @update
         const updateName = `update${type.name}`;
         if (!existingSet.has(updateName)) {
-          const updateType = this.getUpdateType(type);
+          const config = this.getMutationConfig(type, 'update');
+          const updateType = config.input ?? this.getUpdateType(type);
           if (updateType) {
+            const args: GraphQLFieldConfigArgumentMap = {
+              input: {
+                type: new GraphQLNonNull(updateType),
+                description: 'Input object containing the ID of the object to update and the new field values',
+              },
+            };
+            if (config.options) {
+              args.options = {
+                type: config.options,
+                description: 'Update options',
+              };
+            }
             fields.push([
               updateName,
               {
                 description: `Updates an existing ${type.name} object`,
                 type: new GraphQLNonNull(
-                  new GraphQLObjectType({
-                    name: `Update${type.name}Payload`,
-                    description: `Automatically generated output type for ${this.mutationTypeName}.update${type.name}`,
-                    fields: {
-                      [CLIENT_MUTATION_ID]: {
-                        type: GraphQLString,
-                        description: CLIENT_MUTATION_ID_PAYLOAD_DESCRIPTION,
+                  config.payload ??
+                    new GraphQLObjectType({
+                      name: `Update${type.name}Payload`,
+                      description: `Automatically generated output type for ${this.mutationTypeName}.update${type.name}`,
+                      fields: {
+                        [CLIENT_MUTATION_ID]: {
+                          type: GraphQLString,
+                          description: CLIENT_MUTATION_ID_PAYLOAD_DESCRIPTION,
+                        },
+                        [lcFirst(type.name)]: {
+                          type: new GraphQLNonNull(type),
+                          description: `The updated ${type.name} object`,
+                        },
                       },
-                      [lcFirst(type.name)]: {
-                        type: new GraphQLNonNull(type),
-                        description: `The updated ${type.name} object`,
-                      },
-                    },
-                  })
+                    })
                 ),
-                args: {
-                  input: {
-                    type: new GraphQLNonNull(updateType),
-                    description: 'Input object containing the ID of the object to update and the new field values',
-                  },
-                },
+                args,
               },
             ]);
           }
         }
-        // TODO: @delete
         const deleteName = `delete${type.name}`;
         if (!existingSet.has(deleteName)) {
-          const deleteType = this.getDeleteType(type);
+          const config = this.getMutationConfig(type, 'delete');
+          const deleteType = config.input ?? this.getDeleteType(type);
           if (deleteType) {
+            const args: GraphQLFieldConfigArgumentMap = {
+              input: {
+                type: new GraphQLNonNull(deleteType),
+                description: 'Input object containing the ID of the object to delete',
+              },
+            };
+            if (config.options) {
+              args.options = {
+                type: config.options,
+                description: 'Deletion options',
+              };
+            }
             fields.push([
               deleteName,
               {
                 description: `Deletes an existing ${type.name} object`,
                 type: new GraphQLNonNull(
-                  new GraphQLObjectType({
-                    name: `Delete${type.name}Payload`,
-                    description: `Automatically generated output type for ${this.mutationTypeName}.delete${type.name}`,
-                    fields: {
-                      [CLIENT_MUTATION_ID]: {
-                        type: GraphQLString,
-                        description: CLIENT_MUTATION_ID_PAYLOAD_DESCRIPTION,
+                  config.payload ??
+                    new GraphQLObjectType({
+                      name: `Delete${type.name}Payload`,
+                      description: `Automatically generated output type for ${this.mutationTypeName}.delete${type.name}`,
+                      fields: {
+                        [CLIENT_MUTATION_ID]: {
+                          type: GraphQLString,
+                          description: CLIENT_MUTATION_ID_PAYLOAD_DESCRIPTION,
+                        },
+                        [DELETED_FLAG]: {
+                          type: new GraphQLNonNull(GraphQLBoolean),
+                          description: DELETED_FLAG_DESCRIPTION,
+                        },
                       },
-                      [DELETED_FLAG]: {
-                        type: new GraphQLNonNull(GraphQLBoolean),
-                        description: DELETED_FLAG_DESCRIPTION,
-                      },
-                    },
-                  })
+                    })
                 ),
-                args: {
-                  input: {
-                    type: new GraphQLNonNull(deleteType),
-                    description: 'Input object containing the ID of the object to delete',
-                  },
-                },
+                args,
               },
             ]);
           }
@@ -247,6 +278,70 @@ export class MutationBuilder {
 
   private isConcreteEntityTable(typeInfo: TypeInfo): typeInfo is TypeInfo<GraphQLObjectType> {
     return isObjectType(typeInfo.type) && typeInfo.hasIdentity; // not an interface table or nested/1:1 table
+  }
+
+  private getMutationConfig(type: GraphQLObjectType, mutation: 'create' | 'update' | 'delete'): MutationConfig {
+    const config: MutationConfig = {};
+    const defDir = findDirective(type, this.config.mutationDirective);
+    let optionsArg;
+    if (defDir) {
+      optionsArg = getDirectiveArgument(defDir, 'options');
+    }
+    let dirName: string;
+    switch (mutation) {
+      case 'create':
+        dirName = this.config.createDirective;
+        break;
+      case 'update':
+        dirName = this.config.updateDirective;
+        break;
+      case 'delete':
+        dirName = this.config.deleteDirective;
+        break;
+    }
+    const dir = findDirective(type, dirName);
+    let inputArg;
+    let payloadArg;
+    if (dir) {
+      inputArg = getDirectiveArgument(dir, 'input');
+      optionsArg = getDirectiveArgument(dir, 'options') ?? optionsArg;
+      payloadArg = getDirectiveArgument(dir, 'payload');
+    }
+    if (inputArg) {
+      config.input = this.findInputObjectType((inputArg.value as StringValueNode).value);
+    }
+    if (optionsArg) {
+      config.options = this.findInputObjectType((optionsArg.value as StringValueNode).value);
+    }
+    if (payloadArg) {
+      config.payload = this.findObjectType((payloadArg.value as StringValueNode).value);
+    }
+    return config;
+  }
+
+  private findNamedType(name: string): GraphQLNamedType {
+    const type = this.schema.getType(name);
+    if (!type) {
+      console.log(`findNamedType(${name})`, Object.keys(this.schema.getTypeMap()).sort().join(', '));
+      throw new Error(`Cannot find referenced type "${name}"`);
+    }
+    return type;
+  }
+
+  private findInputObjectType(name: string): GraphQLInputObjectType {
+    const type = this.findNamedType(name);
+    if (!isInputObjectType(type)) {
+      throw new Error(`Referenced type "${name}" is not an input object`);
+    }
+    return type;
+  }
+
+  private findObjectType(name: string): GraphQLObjectType {
+    const type = this.findNamedType(name);
+    if (!isObjectType(type)) {
+      throw new Error(`Referenced type "${name}" is not an object`);
+    }
+    return type;
   }
 
   private getCreateType(type: GraphQLObjectType): GraphQLInputObjectType | null {
