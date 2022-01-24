@@ -67,30 +67,33 @@ export class SqlMetadataWriter {
 
     const { type, tableIds } = typeInfo;
     if (tableIds) {
-      tsType = ts.createTypeReferenceNode(ts.createQualifiedName(gqlsql, 'UnionMetadata'), undefined);
+      tsType = ts.factory.createTypeReferenceNode(ts.factory.createQualifiedName(gqlsql, 'UnionMetadata'), undefined);
 
       const idProps = [];
       for (const [key, value] of Array.from(tableIds.entries()).sort((a, b) => compare(a[0], b[0]))) {
-        idProps.push(ts.createPropertyAssignment(key, module.addImport(`./${value.name}`, value.name)));
+        idProps.push(ts.factory.createPropertyAssignment(key, module.addImport(`./${value.name}`, value.name)));
       }
-      propMap['tableIds'] = ts.createObjectLiteral(idProps, true);
+      propMap['tableIds'] = ts.factory.createObjectLiteralExpression(idProps, true);
     } else {
       const { identityTypeInfo = typeInfo, tableId } = typeInfo;
       const idType = identityTypeInfo.hasTable ? (identityTypeInfo.type as TableType) : null;
       if (idType) {
         const mapping = this.sqlMappings.getIdentityTableForType(idType);
         if (mapping) {
-          tsType = ts.createTypeReferenceNode(ts.createQualifiedName(gqlsql, 'TableMetadata'), undefined);
+          tsType = ts.factory.createTypeReferenceNode(
+            ts.factory.createQualifiedName(gqlsql, 'TableMetadata'),
+            undefined
+          );
 
           if (tableId) {
-            propMap['tableId'] = ts.createStringLiteral(tableId);
+            propMap['tableId'] = ts.factory.createStringLiteral(tableId);
           }
 
           const { table } = mapping;
-          propMap['tableName'] = ts.createStringLiteral(table.name);
+          propMap['tableName'] = ts.factory.createStringLiteral(table.name);
 
-          propMap['idColumns'] = ts.createArrayLiteral(
-            table.primaryKey.parts.map((part) => ts.createStringLiteral(part.column.name))
+          propMap['idColumns'] = ts.factory.createArrayLiteralExpression(
+            table.primaryKey.parts.map((part) => ts.factory.createStringLiteral(part.column.name))
           );
 
           if (identityTypeInfo.externalIdField && identityTypeInfo.externalIdDirective) {
@@ -100,7 +103,7 @@ export class SqlMetadataWriter {
                 identityTypeInfo.externalIdDirective.name.value === this.config.randomIdDirective
                   ? 'randomIdColumn'
                   : 'wellKnownIdColumn';
-              propMap[propName] = ts.createStringLiteral(fieldMapping.columns[0].name);
+              propMap[propName] = ts.factory.createStringLiteral(fieldMapping.columns[0].name);
             }
           }
         } else {
@@ -111,7 +114,7 @@ export class SqlMetadataWriter {
       }
     }
 
-    propMap['typeName'] = ts.createStringLiteral(type.name);
+    propMap['typeName'] = ts.factory.createStringLiteral(type.name);
 
     let objectTypes: GraphQLObjectType[];
     let includeObjectTypes: boolean;
@@ -119,14 +122,14 @@ export class SqlMetadataWriter {
       objectTypes = Array.from(this.analyzer.getImplementingTypes(type));
       includeObjectTypes = objectTypes.length > 0;
     } else if (isUnionType(type)) {
-      objectTypes = type.getTypes();
+      objectTypes = [...type.getTypes()];
       includeObjectTypes = true;
     } else {
       objectTypes = [type];
       includeObjectTypes = false;
     }
     if (includeObjectTypes) {
-      propMap['objectTypes'] = ts.createArrayLiteral(
+      propMap['objectTypes'] = ts.factory.createArrayLiteralExpression(
         objectTypes
           .sort((a, b) => compare(a.name, b.name))
           .map((objectType) => module.addImport(`./${objectType.name}`, objectType.name)),
@@ -141,20 +144,20 @@ export class SqlMetadataWriter {
     }
     interfaceNames.delete(type.name);
     if (interfaceNames.size > 0) {
-      propMap['interfaceNames'] = ts.createArrayLiteral(
+      propMap['interfaceNames'] = ts.factory.createArrayLiteralExpression(
         Array.from(interfaceNames)
           .sort()
-          .map((name) => ts.createStringLiteral(name)),
+          .map((name) => ts.factory.createStringLiteral(name)),
         true
       );
     }
 
     const properties = Object.entries(propMap)
       .sort((a, b) => compare(a[0], b[0]))
-      .map(([key, value]) => ts.createPropertyAssignment(key, value));
-    const id = ts.createIdentifier(type.name);
-    module.addStatement(this.declareConst(id, tsType, ts.createObjectLiteral(properties, true)));
-    module.addStatement(ts.createExportDefault(id));
+      .map(([key, value]) => ts.factory.createPropertyAssignment(key, value));
+    const id = ts.factory.createIdentifier(type.name);
+    module.addStatement(this.declareConst(id, tsType, ts.factory.createObjectLiteralExpression(properties, true)));
+    module.addStatement(ts.factory.createExportDefault(id));
 
     const outputFile = this.getSourcePath(type.name);
     await module.write(outputFile, this.formatter);
@@ -171,10 +174,10 @@ export class SqlMetadataWriter {
     for (const resolver of metas) {
       const { id } = resolver;
       const idIdentifier = module.addImport(`./${id}`, id);
-      properties.push(ts.createShorthandPropertyAssignment(idIdentifier));
+      properties.push(ts.factory.createShorthandPropertyAssignment(idIdentifier));
     }
 
-    module.addStatement(ts.createExportDefault(ts.createObjectLiteral(properties, true)));
+    module.addStatement(ts.factory.createExportDefault(ts.factory.createObjectLiteralExpression(properties, true)));
 
     return module;
   }
@@ -184,9 +187,12 @@ export class SqlMetadataWriter {
     type?: ts.TypeNode,
     initializer?: ts.Expression
   ): ts.VariableStatement {
-    return ts.createVariableStatement(
+    return ts.factory.createVariableStatement(
       undefined,
-      ts.createVariableDeclarationList([ts.createVariableDeclaration(name, type, initializer)], ts.NodeFlags.Const)
+      ts.factory.createVariableDeclarationList(
+        [ts.factory.createVariableDeclaration(name, undefined, type, initializer)],
+        ts.NodeFlags.Const
+      )
     );
   }
 

@@ -3,6 +3,8 @@ import {
   ArgumentNode,
   assertScalarType,
   buildASTSchema,
+  ConstArgumentNode,
+  ConstDirectiveNode,
   DirectiveNode,
   getNamedType,
   getNullableType,
@@ -34,6 +36,7 @@ import {
   isObjectType,
   isScalarType,
   isUnionType,
+  Kind,
   ListTypeNode,
   ListValueNode,
   NamedTypeNode,
@@ -41,7 +44,6 @@ import {
   NonNullTypeNode,
   parse,
   StringValueNode,
-  TypeNode,
 } from 'graphql';
 import path from 'path';
 import { plural, singular } from 'pluralize';
@@ -49,7 +51,7 @@ import { Memoize } from 'typescript-memoize';
 import { Analyzer, isConnectionFieldInfo, TypeInfo } from './Analyzer';
 import { DirectiveConfig } from './config/DirectiveConfig';
 import {
-  findFirstDirective,
+  findDirective,
   getDirectiveArgument,
   getRequiredDirectiveArgument,
   hasDirectiveFlag,
@@ -57,6 +59,7 @@ import {
 } from './util/ast-util';
 import { joinCamelCase, lcFirst, mapLast, splitCamelCase, ucFirst } from './util/case';
 import { compare } from './util/compare';
+import { getErrorMessage } from './util/error';
 import { unwrapType, WrapperType, wrapType } from './util/graphql-util';
 
 type FieldType = GraphQLField<any, any>;
@@ -65,7 +68,7 @@ interface FieldDesc {
   name: string;
   type: GraphQLInputType;
   description: string | null | undefined;
-  directive?: DirectiveNode;
+  directive?: ConstDirectiveNode;
 }
 
 export const CLIENT_MUTATION_ID = 'clientMutationId';
@@ -309,7 +312,7 @@ export class MutationBuilder {
     const wrapped = unwrapType(type);
     let namedType = wrapped.type;
     let isList = wrapped.wrappers.length > 0;
-    const addResult = (inputType: GraphQLInputType, inputDir?: DirectiveNode, fieldName = name): void => {
+    const addResult = (inputType: GraphQLInputType, inputDir?: ConstDirectiveNode, fieldName = name): void => {
       inputType = wrapType(inputType, wrapped.wrappers) as GraphQLInputType;
       if (nonNull) {
         inputType = new GraphQLNonNull(inputType);
@@ -318,7 +321,7 @@ export class MutationBuilder {
     };
 
     // treat connections as non-null lists if they are many-to-many or have a nested create directive
-    const createDir = findFirstDirective(field, this.config.createNestedDirective);
+    const createDir = findDirective(field, this.config.createNestedDirective);
     const fieldInfo = this.analyzer.findFieldInfo(field);
     let edgeType: GraphQLObjectType | undefined;
     let extraEdgeFields: FieldType[] | undefined;
@@ -415,7 +418,7 @@ export class MutationBuilder {
             }
           }
         } catch (e) {
-          throw new Error(`${e.message} for field "${parentType.name}.${field.name}"`);
+          throw new Error(`${getErrorMessage(e)} for field "${parentType.name}.${field.name}"`);
         }
       } else {
         const nestedType = this.makeCreateType(namedType, `Nested${namedType.name}`);
@@ -424,7 +427,7 @@ export class MutationBuilder {
         }
       }
     } else {
-      addResult(namedType, findFirstDirective(field, this.config.wkidDirective));
+      addResult(namedType, findDirective(field, this.config.wkidDirective));
     }
 
     return result;
@@ -471,10 +474,10 @@ export class MutationBuilder {
       description,
       fields: Object.fromEntries(fields),
       astNode: {
-        kind: 'InputObjectTypeDefinition',
+        kind: Kind.INPUT_OBJECT_TYPE_DEFINITION,
         name: makeNameNode(name),
         description: {
-          kind: 'StringValue',
+          kind: Kind.STRING,
           value: description,
           block: true,
         },
@@ -502,13 +505,13 @@ export class MutationBuilder {
     const wrapped = unwrapType(type);
     let namedType = wrapped.type;
     let isList = wrapped.wrappers.length > 0;
-    const addResult = (inputType: GraphQLInputType, inputDir?: DirectiveNode, fieldName = name): void => {
+    const addResult = (inputType: GraphQLInputType, inputDir?: ConstDirectiveNode, fieldName = name): void => {
       inputType = wrapType(inputType, wrapped.wrappers) as GraphQLInputType;
       result.push(makeInputFieldConfigEntry(fieldName, inputType, description, inputDir && [inputDir]));
     };
 
     // treat connections as non-null lists if they are many-to-many or have a nested update directive
-    const updateDir = findFirstDirective(field, this.config.updateNestedDirective);
+    const updateDir = findDirective(field, this.config.updateNestedDirective);
     const fieldInfo = this.analyzer.findFieldInfo(field);
     let edgeType: GraphQLObjectType | undefined;
     let extraEdgeFields: FieldType[] | undefined;
@@ -569,7 +572,7 @@ export class MutationBuilder {
             }
           }
         } catch (e) {
-          throw new Error(`${e.message} for field "${parentType.name}.${field.name}"`);
+          throw new Error(`${getErrorMessage(e)} for field "${parentType.name}.${field.name}"`);
         }
       } else {
         const nestedType = this.makeUpdateType(namedType, `Nested${namedType.name}`);
@@ -578,7 +581,7 @@ export class MutationBuilder {
         }
       }
     } else {
-      addResult(namedType, findFirstDirective(field, this.config.wkidDirective));
+      addResult(namedType, findDirective(field, this.config.wkidDirective));
     }
 
     return result;
@@ -587,6 +590,7 @@ export class MutationBuilder {
   private isInputNodeType(type: GraphQLNullableType): boolean {
     // allows lists of input types but not (nested) lists of object IDs
     if (isInputType(type)) return true;
+    if (isListType(type)) return false;
     const typeInfo = this.analyzer.getTypeInfo(type);
     return typeInfo.externalIdField != null;
   }
@@ -683,7 +687,7 @@ export class MutationBuilder {
           ];
         }
       } catch (e) {
-        throw new Error(`Unable to reference type "${type.name}": ${e.message}`);
+        throw new Error(`Unable to reference type "${type.name}": ${getErrorMessage(e)}`);
       }
     }
 
@@ -724,15 +728,13 @@ export class MutationBuilder {
     if (namePrefix && !name.startsWith(namePrefix)) {
       name = namePrefix + ucFirst(name);
     }
-    let fieldType = getNullableType(field.type);
+    const fieldType = getNullableType(field.type);
     if (isScalarType(fieldType) || isEnumType(fieldType)) {
-      if (nonNull) {
-        fieldType = new GraphQLNonNull(fieldType);
-      }
+      const scalarFieldType = nonNull ? new GraphQLNonNull(fieldType) : fieldType;
       return [
         {
           name,
-          type: fieldType,
+          type: scalarFieldType,
           description: field.description,
           directive: this.getIdRefDirective(type.name, field.name),
         },
@@ -744,17 +746,17 @@ export class MutationBuilder {
     throw new Error(`Unexpected type for ID field ${type.name}.${field.name}`);
   }
 
-  private getIdRefDirective(type: string, field?: string): DirectiveNode {
-    const args: ArgumentNode[] = [makeStringArgumentNode('type', type)];
+  private getIdRefDirective(type: string, field?: string): ConstDirectiveNode {
+    const args: ConstArgumentNode[] = [makeStringArgumentNode('type', type)];
     if (field) {
       args.push(makeStringArgumentNode('field', field));
     }
     return makeDirectiveNode(this.config.idRefDirective, args);
   }
 
-  private getExternalIdRefDirective(originalDirective: DirectiveNode, type: string): DirectiveNode {
+  private getExternalIdRefDirective(originalDirective: ConstDirectiveNode, type: string): ConstDirectiveNode {
     let name;
-    const args: ArgumentNode[] = [];
+    const args: ConstArgumentNode[] = [];
     switch (originalDirective.name.value) {
       case this.config.randomIdDirective:
         name = this.config.randomIdRefDirective;
@@ -772,14 +774,14 @@ export class MutationBuilder {
     return makeDirectiveNode(name, args);
   }
 
-  private getExternalIdDirective(objectTypes: Iterable<GraphQLObjectType>): DirectiveNode | undefined {
+  private getExternalIdDirective(objectTypes: Iterable<GraphQLObjectType>): ConstDirectiveNode | undefined {
     return Array.from(objectTypes, (impl) => {
       const typeInfo = this.analyzer.findTypeInfo(impl);
       if (!typeInfo || !typeInfo.externalIdDirective) {
         throw new Error(`No external ID for type "${impl.name}"`);
       }
       return typeInfo.externalIdDirective;
-    }).reduce<DirectiveNode | undefined>((result, dir) => {
+    }).reduce<ConstDirectiveNode | undefined>((result, dir) => {
       if (!result) {
         return dir;
       } else if (result.name.value !== dir.name.value) {
@@ -837,7 +839,7 @@ export class MutationBuilder {
 
     const typeInfo = this.analyzer.getTypeInfo(type);
     if (typeInfo.softDeleteField) {
-      const dir = findFirstDirective(typeInfo.softDeleteField, this.config.softDeleteDirective);
+      const dir = findDirective(typeInfo.softDeleteField, this.config.softDeleteDirective);
       if (dir) {
         const permArg = getDirectiveArgument(dir, 'allowPermanent');
         if (permArg && permArg.value.kind === 'BooleanValue' && permArg.value.value) {
@@ -858,10 +860,10 @@ export class MutationBuilder {
       description,
       fields: Object.fromEntries(fields),
       astNode: {
-        kind: 'InputObjectTypeDefinition',
+        kind: Kind.INPUT_OBJECT_TYPE_DEFINITION,
         name: makeNameNode(name),
         description: {
-          kind: 'StringValue',
+          kind: Kind.STRING,
           value: description,
           block: true,
         },
@@ -885,7 +887,7 @@ export class MutationBuilder {
 
   private includeInCreate(field: FieldType): boolean {
     if (hasDirectives(field, this.getNoCreateDirectives())) return false;
-    const derived = findFirstDirective(field, this.config.derivedDirective);
+    const derived = findDirective(field, this.config.derivedDirective);
     return !derived || hasDirectiveFlag(derived, 'writable');
   }
 
@@ -896,7 +898,7 @@ export class MutationBuilder {
 
   private includeInUpdate(field: FieldType): boolean {
     if (hasDirectives(field, this.getNoUpdateDirectives())) return false;
-    const derived = findFirstDirective(field, this.config.derivedDirective);
+    const derived = findDirective(field, this.config.derivedDirective);
     return !derived || hasDirectiveFlag(derived, 'writable');
   }
 
@@ -931,10 +933,10 @@ function makeInputObjectType(
     description,
     fields: Object.fromEntries(fields),
     astNode: {
-      kind: 'InputObjectTypeDefinition',
+      kind: Kind.INPUT_OBJECT_TYPE_DEFINITION,
       name: makeNameNode(name),
       description: {
-        kind: 'StringValue',
+        kind: Kind.STRING,
         value: description,
         block: true,
       },
@@ -955,7 +957,7 @@ function makeInputFieldConfigEntry(
   name: string,
   type: GraphQLInputType,
   description: string | null | undefined,
-  directives?: DirectiveNode[]
+  directives?: ConstDirectiveNode[]
 ): [string, GraphQLInputFieldConfig] {
   return [name, { type, description, astNode: makeInputValueDefinitionNode(name, type, directives) }];
 }
@@ -963,10 +965,10 @@ function makeInputFieldConfigEntry(
 function makeInputValueDefinitionNode(
   name: string,
   type: GraphQLInputType,
-  directives?: DirectiveNode[]
+  directives?: ConstDirectiveNode[]
 ): InputValueDefinitionNode {
   return {
-    kind: 'InputValueDefinition',
+    kind: Kind.INPUT_VALUE_DEFINITION,
     name: makeNameNode(name),
     type: makeTypeNode(type),
     directives,
@@ -976,40 +978,46 @@ function makeInputValueDefinitionNode(
 function makeTypeNode(type: GraphQLNamedType): NamedTypeNode;
 function makeTypeNode(type: GraphQLList<GraphQLType>): ListTypeNode;
 function makeTypeNode(type: GraphQLNonNull<GraphQLNullableType>): NonNullTypeNode;
-function makeTypeNode(type: GraphQLType): TypeNode;
-function makeTypeNode(type: GraphQLType): TypeNode {
+function makeTypeNode(type: GraphQLNullableType): NamedTypeNode | ListTypeNode;
+function makeTypeNode(type: GraphQLType): NamedTypeNode | ListTypeNode | NonNullTypeNode;
+function makeTypeNode(type: GraphQLType): NamedTypeNode | ListTypeNode | NonNullTypeNode {
   if (isNonNullType(type)) {
     return {
-      kind: 'NonNullType',
+      kind: Kind.NON_NULL_TYPE,
       type: makeTypeNode(type.ofType),
     };
   }
   if (isListType(type)) {
     return {
-      kind: 'ListType',
+      kind: Kind.LIST_TYPE,
       type: makeTypeNode(type.ofType),
     };
   }
   return {
-    kind: 'NamedType',
+    kind: Kind.NAMED_TYPE,
     name: makeNameNode(type.name),
   };
 }
 
-function makeDirectiveNode(name: string, args?: ArgumentNode[]): DirectiveNode {
+function makeDirectiveNode(name: string, args?: ConstArgumentNode[]): ConstDirectiveNode;
+function makeDirectiveNode(name: string, args?: ArgumentNode[]): DirectiveNode;
+function makeDirectiveNode(
+  name: string,
+  args?: ConstArgumentNode[] | ArgumentNode[]
+): ConstDirectiveNode | DirectiveNode {
   return {
-    kind: 'Directive',
+    kind: Kind.DIRECTIVE,
     name: makeNameNode(name),
     arguments: args,
   };
 }
 
-function makeStringArgumentNode(name: string, value: string): ArgumentNode {
+function makeStringArgumentNode(name: string, value: string): ConstArgumentNode {
   return {
-    kind: 'Argument',
+    kind: Kind.ARGUMENT,
     name: makeNameNode(name),
     value: {
-      kind: 'StringValue',
+      kind: Kind.STRING,
       value: value,
     },
   };
@@ -1017,7 +1025,7 @@ function makeStringArgumentNode(name: string, value: string): ArgumentNode {
 
 function makeNameNode(name: string): NameNode {
   return {
-    kind: 'Name',
+    kind: Kind.NAME,
     value: name,
   };
 }

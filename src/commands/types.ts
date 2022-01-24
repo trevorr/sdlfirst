@@ -1,6 +1,6 @@
+import { GraphQLFileLoader } from '@graphql-tools/graphql-file-loader';
+import { loadSchema } from '@graphql-tools/load';
 import { Command, flags } from '@oclif/command';
-import { buildASTSchema, parse } from 'graphql';
-import { importSchema } from 'graphql-import';
 import { basename, dirname, join } from 'path';
 import SDLFirst from '..';
 import { defaultConfig, PathConfig } from '../config/PathConfig';
@@ -28,20 +28,23 @@ Type definitions written to ${defaultOutput}
   static args = [{ name: 'file', required: true }];
 
   async run(): Promise<void> {
-    const {
-      args,
-      flags: { output },
-    } = this.parse(Types);
-    const inputSource = importSchema(args.file);
-    const inputAst = parse(inputSource);
-    const inputSchema = buildASTSchema(inputAst);
-    const config: Partial<PathConfig> = {};
-    if (output) {
-      config.sdlTypesDir = dirname(output);
-      config.sdlTypesFile = basename(output);
+    try {
+      const {
+        args,
+        flags: { output },
+      } = this.parse(Types);
+      const directivesPath = join(dirname(dirname(__dirname)), 'sdl', 'directives.graphql');
+      const inputSchema = await loadSchema([args.file, directivesPath], { loaders: [new GraphQLFileLoader()] });
+      const config: Partial<PathConfig> = {};
+      if (output) {
+        config.sdlTypesDir = dirname(output);
+        config.sdlTypesFile = basename(output);
+      }
+      const sdlFirst = new SDLFirst(inputSchema);
+      sdlFirst.writeTypes(config);
+      this.log(`Type definitions written to ${output}`);
+    } catch (e) {
+      console.error(e);
     }
-    const sdlFirst = new SDLFirst(inputSchema);
-    sdlFirst.writeTypes(config, inputAst);
-    this.log(`Type definitions written to ${output}`);
   }
 }

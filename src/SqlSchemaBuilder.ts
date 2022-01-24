@@ -38,7 +38,7 @@ import { SqlColumn } from './model/SqlColumn';
 import { SqlKeyType } from './model/SqlKey';
 import { SqlTable } from './model/SqlTable';
 import {
-  findFirstDirective,
+  findDirective,
   formatLocationOf,
   getDirectiveArgument,
   getRequiredDirectiveArgument,
@@ -217,7 +217,7 @@ export class SqlSchemaBuilder {
       this.emitColumnsForFields(mapping, typeInfo, fieldNames);
 
       // add any keys from @sqlTable directive
-      const tableDir = findFirstDirective(type, this.config.sqlTableDirective);
+      const tableDir = findDirective(type, this.config.sqlTableDirective);
       const keysArg = tableDir ? getDirectiveArgument(tableDir, 'keys') : null;
       if (keysArg != null) {
         this.emitKeys(table, keysArg);
@@ -308,7 +308,7 @@ export class SqlSchemaBuilder {
     }
 
     if (this.isGeneratedAutoinc(field)) {
-      const fieldMapping: FieldColumns = { field, columns: mapping.table.primaryKey.parts.map(part => part.column) };
+      const fieldMapping: FieldColumns = { field, columns: mapping.table.primaryKey.parts.map((part) => part.column) };
       mapping.fieldMappings.set(field, fieldMapping);
       return [];
     }
@@ -329,18 +329,20 @@ export class SqlSchemaBuilder {
     let collate;
     let srid;
     let uniqueKey = hasDirective(field, this.config.uniqueDirective);
-    let typeDir = findFirstDirective(field, this.config.sqlTypeDirective);
+    let typeDir = findDirective(field, this.config.sqlTypeDirective);
     if (typeDir == null && 'astNode' in fieldType) {
-      typeDir = findFirstDirective(fieldType, this.config.sqlTypeDirective);
+      typeDir = findDirective(fieldType, this.config.sqlTypeDirective);
     }
     if (typeDir != null) {
       ({ type: sqlType, charset, collate, srid } = this.getExplicitSqlType(typeDir));
     } else if (isScalarType(fieldType)) {
-      ({ name = name, type: sqlType, charset, collate, uniqueKey = uniqueKey } = this.getScalarSqlType(
-        fieldType,
-        field,
-        autoIncrement
-      ));
+      ({
+        name = name,
+        type: sqlType,
+        charset,
+        collate,
+        uniqueKey = uniqueKey,
+      } = this.getScalarSqlType(fieldType, field, autoIncrement));
     } else if (isEnumType(fieldType)) {
       ({ type: sqlType, charset, collate } = this.getEnumSqlType(fieldType));
     } else if (isObjectType(fieldType)) {
@@ -501,7 +503,7 @@ export class SqlSchemaBuilder {
         }
       } else {
         if ('astNode' in elementType) {
-          typeDir = findFirstDirective(elementType, this.config.sqlTypeDirective);
+          typeDir = findDirective(elementType, this.config.sqlTypeDirective);
         }
         if (typeDir != null) {
           ({ type: sqlType, charset, collate, srid } = this.getExplicitSqlType(typeDir));
@@ -600,8 +602,8 @@ export class SqlSchemaBuilder {
     let name, sqlType, charset, collate, uniqueKey;
     switch (type.name) {
       case 'ID':
-        const ridDir = findFirstDirective(field, this.config.randomIdDirective);
-        const wkidDir = findFirstDirective(field, this.config.wkidDirective);
+        const ridDir = findDirective(field, this.config.randomIdDirective);
+        const wkidDir = findDirective(field, this.config.wkidDirective);
         if (ridDir != null) {
           name = this.config.randomIdName;
           sqlType = this.config.randomIdSqlType;
@@ -628,7 +630,7 @@ export class SqlSchemaBuilder {
         }
         break;
       case 'String':
-        const lengthDir = findFirstDirective(field, this.config.lengthDirective);
+        const lengthDir = findDirective(field, this.config.lengthDirective);
         if (lengthDir != null) {
           const maxArg = getRequiredDirectiveArgument(lengthDir, 'max', 'IntValue');
           sqlType = `varchar(${(maxArg.value as IntValueNode).value})`;
@@ -788,7 +790,7 @@ export class SqlSchemaBuilder {
       tableName = `${idPrefix}_${snakeCase(field.name)}`;
     }
 
-    const nmtmDir = findFirstDirective(field, this.config.newManyToManyDirective);
+    const nmtmDir = findDirective(field, this.config.newManyToManyDirective);
     if (nmtmDir != null) {
       const fieldArg = getDirectiveArgument(nmtmDir, 'tableName');
       if (fieldArg != null) {
@@ -815,7 +817,7 @@ export class SqlSchemaBuilder {
   }
 
   private emitJoinTableKeys(table: SqlTable, field: FieldType): void {
-    const nmtmDir = findFirstDirective(field, this.config.newManyToManyDirective);
+    const nmtmDir = findDirective(field, this.config.newManyToManyDirective);
     if (nmtmDir != null) {
       const keysArg = getDirectiveArgument(nmtmDir, 'tableKeys');
       if (keysArg != null) {
@@ -979,7 +981,7 @@ export class SqlSchemaBuilder {
 }
 
 function getTableName(type: GraphQLNamedType, config: SqlConfig): string {
-  const tableDir = findFirstDirective(type, config.sqlTableDirective);
+  const tableDir = findDirective(type, config.sqlTableDirective);
   if (tableDir != null) {
     const nameArg = getDirectiveArgument(tableDir, 'name');
     if (nameArg != null) {
@@ -997,7 +999,7 @@ function getColumnNameInfo(
   let name = defaultName;
   let explicitName = false;
 
-  const columnDir = findFirstDirective(field, config.sqlColumnDirective);
+  const columnDir = findDirective(field, config.sqlColumnDirective);
   if (columnDir != null) {
     const nameArg = getDirectiveArgument(columnDir, 'name');
     if (nameArg != null) {
@@ -1007,8 +1009,8 @@ function getColumnNameInfo(
   }
 
   if (!name) {
-    const ridDir = findFirstDirective(field, config.randomIdDirective);
-    const wkidDir = findFirstDirective(field, config.wkidDirective);
+    const ridDir = findDirective(field, config.randomIdDirective);
+    const wkidDir = findDirective(field, config.wkidDirective);
     if (ridDir != null) {
       name = config.randomIdName;
     } else if (wkidDir != null) {

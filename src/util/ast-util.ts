@@ -1,4 +1,10 @@
-import { ArgumentNode, ASTNode, DirectiveNode, Location } from 'graphql';
+import { ArgumentNode, ASTNode, ConstArgumentNode, ConstDirectiveNode, DirectiveNode, Location } from 'graphql';
+
+export interface WithConstDirectives {
+  astNode?: {
+    readonly directives?: ReadonlyArray<ConstDirectiveNode>;
+  } | null;
+}
 
 export interface WithDirectives {
   astNode?: {
@@ -6,18 +12,16 @@ export interface WithDirectives {
   } | null;
 }
 
-export function findFirstDirective(type: WithDirectives, name: string): DirectiveNode | undefined {
+export function findDirective(type: WithConstDirectives, name: string): ConstDirectiveNode | undefined;
+export function findDirective(type: WithDirectives, name: string): DirectiveNode | undefined;
+export function findDirective(type: WithDirectives, name: string): DirectiveNode | undefined {
   return type.astNode && type.astNode.directives
     ? type.astNode.directives.find((d) => d.name.value === name)
     : undefined;
 }
 
-export function findDirectives(type: WithDirectives, name: string): DirectiveNode[] {
-  return type.astNode && type.astNode.directives ? type.astNode.directives.filter((d) => d.name.value === name) : [];
-}
-
 export function hasDirective(type: WithDirectives, name: string): boolean {
-  return findFirstDirective(type, name) != null;
+  return findDirective(type, name) != null;
 }
 
 export function hasDirectives(type: WithDirectives, names: Iterable<string>): boolean {
@@ -33,10 +37,18 @@ export function hasDirectiveFlag(directive: DirectiveNode, name: string): boolea
   return arg != null && arg.value.kind === 'BooleanValue' && arg.value.value;
 }
 
+export function getDirectiveArgument(directive: ConstDirectiveNode, name: string): ConstArgumentNode | undefined;
+export function getDirectiveArgument(directive: DirectiveNode, name: string): ArgumentNode | undefined;
 export function getDirectiveArgument(directive: DirectiveNode, name: string): ArgumentNode | undefined {
   return directive.arguments ? directive.arguments.find((a) => a.name.value === name) : undefined;
 }
 
+export function getRequiredDirectiveArgument(
+  directive: ConstDirectiveNode,
+  name: string,
+  kind?: string
+): ConstArgumentNode;
+export function getRequiredDirectiveArgument(directive: DirectiveNode, name: string, kind?: string): ArgumentNode;
 export function getRequiredDirectiveArgument(directive: DirectiveNode, name: string, kind?: string): ArgumentNode {
   const arg = getDirectiveArgument(directive, name);
   if (arg == null) {

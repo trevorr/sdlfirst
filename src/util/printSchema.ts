@@ -2,7 +2,9 @@ import {
   GraphQLSchema,
   isSpecifiedDirective,
   isSpecifiedScalarType,
+  Kind,
   OperationTypeDefinitionNode,
+  OperationTypeNode,
   print,
   printType,
   SchemaDefinitionNode,
@@ -16,29 +18,29 @@ function getSchemaAstNode(schema: GraphQLSchema): SchemaDefinitionNode {
   const queryType = schema.getQueryType();
   if (queryType) {
     operationTypes.push({
-      kind: 'OperationTypeDefinition',
-      operation: 'query',
-      type: { kind: 'NamedType', name: { kind: 'Name', value: queryType.name } },
+      kind: Kind.OPERATION_TYPE_DEFINITION,
+      operation: OperationTypeNode.QUERY,
+      type: { kind: Kind.NAMED_TYPE, name: { kind: Kind.NAME, value: queryType.name } },
     });
   }
   const mutationType = schema.getMutationType();
   if (mutationType) {
     operationTypes.push({
-      kind: 'OperationTypeDefinition',
-      operation: 'mutation',
-      type: { kind: 'NamedType', name: { kind: 'Name', value: mutationType.name } },
+      kind: Kind.OPERATION_TYPE_DEFINITION,
+      operation: OperationTypeNode.MUTATION,
+      type: { kind: Kind.NAMED_TYPE, name: { kind: Kind.NAME, value: mutationType.name } },
     });
   }
   const subscriptionType = schema.getSubscriptionType();
   if (subscriptionType) {
     operationTypes.push({
-      kind: 'OperationTypeDefinition',
-      operation: 'subscription',
-      type: { kind: 'NamedType', name: { kind: 'Name', value: subscriptionType.name } },
+      kind: Kind.OPERATION_TYPE_DEFINITION,
+      operation: OperationTypeNode.SUBSCRIPTION,
+      type: { kind: Kind.NAMED_TYPE, name: { kind: Kind.NAME, value: subscriptionType.name } },
     });
   }
   return {
-    kind: 'SchemaDefinition',
+    kind: Kind.SCHEMA_DEFINITION,
     operationTypes,
   };
 }

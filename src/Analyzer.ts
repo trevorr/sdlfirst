@@ -1,4 +1,5 @@
 import {
+  ConstDirectiveNode,
   DirectiveNode,
   getNullableType,
   GraphQLCompositeType,
@@ -25,7 +26,8 @@ import {
 } from 'graphql';
 import { pascalCase } from 'pascal-case';
 import { defaultConfig, DirectiveConfig } from './config/DirectiveConfig';
-import { findFirstDirective, getDirectiveArgument, hasDirective } from './util/ast-util';
+import { findDirective, getDirectiveArgument, hasDirective } from './util/ast-util';
+import { getErrorMessage } from './util/error';
 import { getElementType, getInterfaceImplementors, InterfaceImplementorMap } from './util/graphql-util';
 
 export type TableType = GraphQLObjectType | GraphQLInterfaceType;
@@ -64,7 +66,7 @@ export interface TypeInfo<T = AnalyzedType> {
   externalIdField?: FieldType;
 
   // @wkid or @rid directive of external ID field, if any
-  externalIdDirective?: DirectiveNode;
+  externalIdDirective?: ConstDirectiveNode;
 
   // field used to determine concrete type of interface
   typeDiscriminatorField?: FieldType;
@@ -208,7 +210,7 @@ export class Analyzer {
       }
       return edgeType;
     } catch (e) {
-      throw new Error(`Invalid type for field "edges" of Connection type "${type.name}": ${e.message}`);
+      throw new Error(`Invalid type for field "edges" of Connection type "${type.name}": ${getErrorMessage(e)}`);
     }
   }
 
@@ -256,7 +258,6 @@ export class Analyzer {
       if (isObjectType(type)) {
         const typeInfo = this.findIdFields(type);
         typeInfo.hasTable = true;
-        typeInfo.tableId = this.getTableId(type);
       } else if (isInterfaceType(type)) {
         const typeInfo = this.findIdFields(type);
         if (hasDirective(type, config.sqlTableDirective)) {
@@ -264,8 +265,14 @@ export class Analyzer {
             throw new Error(`@${config.sqlTableDirective} interface "${type.name}" must have an ID field`);
           }
           typeInfo.hasTable = true;
-          typeInfo.tableId = this.getTableId(type);
         }
+      }
+    }
+
+    // need second pass in case object types inherit table ID from interface encountered later
+    for (const [type, typeInfo] of this.typeInfos) {
+      if (typeInfo.hasTable) {
+        typeInfo.tableId = this.getTableId(type as TableType);
       }
     }
   }
@@ -290,8 +297,8 @@ export class Analyzer {
       }
 
       const hasAutoinc = hasDirective(field, config.autoincDirective);
-      const ridDir = findFirstDirective(field, config.randomIdDirective);
-      const wkidDir = findFirstDirective(field, config.wkidDirective);
+      const ridDir = findDirective(field, config.randomIdDirective);
+      const wkidDir = findDirective(field, config.wkidDirective);
       const dirCount = (hasAutoinc ? 1 : 0) + (ridDir ? 1 : 0) + (wkidDir ? 1 : 0);
       if (dirCount > 1) {
         throw new Error(
@@ -523,7 +530,9 @@ export class Analyzer {
         try {
           connectionNodeType = getElementType(nodes.type);
         } catch (e) {
-          throw new Error(`Invalid type for field "nodes" of Connection type "${connectionType.name}": ${e.message}`);
+          throw new Error(
+            `Invalid type for field "nodes" of Connection type "${connectionType.name}": ${getErrorMessage(e)}`
+          );
         }
         if (connectionNodeType !== nodeType) {
           throw new Error(`Element type of "${connectionType.name}.nodes" must match type of "${edgeType.name}.node"`);
@@ -548,9 +557,9 @@ export class Analyzer {
 
   private analyzeConnectionField(fieldInfo: ConnectionFieldInfo): void {
     const { type, field, edgeTypeInfo } = fieldInfo;
-    const otmDir = findFirstDirective(field, this.config.oneToManyDirective);
-    const nmtmDir = findFirstDirective(field, this.config.newManyToManyDirective);
-    const umtmDir = findFirstDirective(field, this.config.useManyToManyDirective);
+    const otmDir = findDirective(field, this.config.oneToManyDirective);
+    const nmtmDir = findDirective(field, this.config.newManyToManyDirective);
+    const umtmDir = findDirective(field, this.config.useManyToManyDirective);
     const dirCount = (otmDir ? 1 : 0) + (nmtmDir ? 1 : 0) + (umtmDir ? 1 : 0);
     if (dirCount > 1) {
       throw new Error(`At most one relation directive allowed on Connection field "${type.name}.${field.name}"`);
@@ -702,7 +711,7 @@ export class Analyzer {
     // T | T2 | T3 <- T | T2 (every source type is assignable to some target type)
     if (isUnionType(targetType)) {
       const targetTypes = targetType.getTypes();
-      const sourceTypes = isUnionType(sourceType) ? sourceType.getTypes() : [sourceType];
+      const sourceTypes: readonly TableType[] = isUnionType(sourceType) ? sourceType.getTypes() : [sourceType];
       return sourceTypes.every((sourceType) =>
         targetTypes.some((targetType) => this.isAssignable(targetType, sourceType))
       );
@@ -820,7 +829,7 @@ export class Analyzer {
   }
 
   private getDeclaredTableId(type: TableType): string | null {
-    const tableDir = findFirstDirective(type, this.config.sqlTableDirective);
+    const tableDir = findDirective(type, this.config.sqlTableDirective);
     if (tableDir != null) {
       const idArg = getDirectiveArgument(tableDir, 'id');
       if (idArg != null) {
@@ -854,7 +863,7 @@ export class Analyzer {
     let minIntValue = Infinity;
     let maxIntValue = -Infinity;
     let transform: string | null = null;
-    const valuesDir = findFirstDirective(typeInfo.type, this.config.sqlValuesDirective);
+    const valuesDir = findDirective(typeInfo.type, this.config.sqlValuesDirective);
     if (valuesDir != null) {
       const transformArg = getDirectiveArgument(valuesDir, 'transform');
       if (transformArg != null) {
@@ -862,7 +871,7 @@ export class Analyzer {
       }
     }
     for (const value of typeInfo.type.getValues()) {
-      const valueDir = findFirstDirective(value, this.config.sqlValueDirective);
+      const valueDir = findDirective(value, this.config.sqlValueDirective);
       let sqlValue = value.name;
       let isInt = false;
       if (valueDir != null) {

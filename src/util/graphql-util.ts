@@ -4,6 +4,7 @@ import {
   GraphQLList,
   GraphQLNamedType,
   GraphQLNonNull,
+  GraphQLNullableType,
   GraphQLObjectType,
   GraphQLType,
   isListType,
@@ -31,7 +32,15 @@ export function getInterfaceImplementors(
   return map;
 }
 
-export function getElementType<T extends GraphQLType>(listType: T): T {
+export function getElementType<T extends GraphQLNullableType>(
+  listType:
+    | GraphQLList<T>
+    | GraphQLList<GraphQLNonNull<T>>
+    | GraphQLNonNull<GraphQLList<T>>
+    | GraphQLNonNull<GraphQLList<GraphQLNonNull<T>>>
+): T;
+export function getElementType(listType: GraphQLType): GraphQLNullableType;
+export function getElementType(listType: GraphQLType): GraphQLNullableType {
   const type = getNullableType(listType);
   if (!isListType(type)) {
     throw new Error(`Expected GraphQLList but got ${type.constructor.name}`);

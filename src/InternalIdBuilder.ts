@@ -1,5 +1,5 @@
+import { mergeSchemas } from '@graphql-tools/schema';
 import { GraphQLInterfaceType, GraphQLObjectType, GraphQLSchema, isInterfaceType, isObjectType } from 'graphql';
-import { mergeSchemas } from 'graphql-tools';
 import { defaultConfig, SqlConfig } from './config/SqlConfig';
 import { hasDirectives } from './util/ast-util';
 
@@ -35,12 +35,15 @@ export class InternalIdBuilder {
     for (const type of Object.values(schema.getTypeMap())) {
       if (type.astNode?.directives) {
         const dirSet = new Set<string>();
-        type.astNode = { ...type.astNode, directives: type.astNode.directives.filter((dirNode) => {
-          const name = dirNode.name.value;
-          if (dirSet.has(name)) return false;
-          dirSet.add(name);
-          return true;
-        }) };
+        type.astNode = {
+          ...type.astNode,
+          directives: type.astNode.directives.filter((dirNode) => {
+            const name = dirNode.name.value;
+            if (dirSet.has(name)) return false;
+            dirSet.add(name);
+            return true;
+          }),
+        };
       }
     }
     return schema;

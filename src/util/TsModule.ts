@@ -37,7 +37,7 @@ export abstract class TsAbstractBlock extends TsNamer {
   }
 
   public toBlock(): ts.Block {
-    return ts.createBlock(this.statements, true);
+    return ts.factory.createBlock(this.statements, true);
   }
 
   public declareConst(name: string, type?: ts.TypeNode, initializer?: ts.Expression): ts.Identifier;
@@ -47,9 +47,12 @@ export abstract class TsAbstractBlock extends TsNamer {
       name = this.createIdentifier(name);
     }
     this.addStatement(
-      ts.createVariableStatement(
+      ts.factory.createVariableStatement(
         undefined,
-        ts.createVariableDeclarationList([ts.createVariableDeclaration(name, type, initializer)], ts.NodeFlags.Const)
+        ts.factory.createVariableDeclarationList(
+          [ts.factory.createVariableDeclaration(name, undefined, type, initializer)],
+          ts.NodeFlags.Const
+        )
       )
     );
     return name;
@@ -140,27 +143,29 @@ export class TsModule extends TsAbstractBlock {
       .sort(moduleOrder)
       .map(
         (m): ts.Statement =>
-          ts.createImportDeclaration(
+          ts.factory.createImportDeclaration(
             undefined,
             undefined,
-            ts.createImportClause(
+            ts.factory.createImportClause(
+              false,
               m.id,
               m.namespaceId
-                ? ts.createNamespaceImport(m.namespaceId)
+                ? ts.factory.createNamespaceImport(m.namespaceId)
                 : m.namedIds
-                ? ts.createNamedImports(
+                ? ts.factory.createNamedImports(
                     Array.from(m.namedIds.entries())
                       .sort((a, b) => compare(a[0], b[0]))
                       .map(([binding, spec]) =>
-                        ts.createImportSpecifier(
-                          binding !== spec.name ? ts.createIdentifier(spec.name) : undefined,
+                        ts.factory.createImportSpecifier(
+                          false,
+                          binding !== spec.name ? ts.factory.createIdentifier(spec.name) : undefined,
                           spec.id
                         )
                       )
                   )
                 : undefined
             ),
-            ts.createStringLiteral(m.module)
+            ts.factory.createStringLiteral(m.module)
           )
       )
       .concat(this.statements);
@@ -173,7 +178,7 @@ export class TsModule extends TsAbstractBlock {
     const sourceFile = ts.createSourceFile(path, '', ts.ScriptTarget.Latest, false, ts.ScriptKind.TS);
     let source = printer.printList(
       ts.ListFormat.SourceFileStatements,
-      ts.createNodeArray(this.buildStatements()),
+      ts.factory.createNodeArray(this.buildStatements()),
       sourceFile
     );
     if (formatter) {

@@ -28,7 +28,7 @@ import {
   ValueNode,
 } from 'graphql';
 import { DirectiveConfig } from './config/DirectiveConfig';
-import { findFirstDirective, getDirectiveArgument, WithDirectives } from './util/ast-util';
+import { findDirective, getDirectiveArgument, WithDirectives } from './util/ast-util';
 import { unwrapType, wrapType } from './util/graphql-util';
 
 type TypeMap = Map<GraphQLNamedType, GraphQLNamedType>;
@@ -263,7 +263,7 @@ export class AudienceFilter {
   }
 
   private isIncluded(type: WithDirectives): boolean {
-    const dir = findFirstDirective(type, this.config.audienceDirective);
+    const dir = findDirective(type, this.config.audienceDirective);
     if (dir) {
       const include = getDirectiveArgument(dir, 'include');
       if (include) {
@@ -298,7 +298,7 @@ function isStringValueNode(n: ValueNode): n is StringValueNode {
   return n.kind === 'StringValue';
 }
 
-function mapTypes<T extends GraphQLNamedType>(types: T[], typeMap: TypeMap): T[] {
+function mapTypes<T extends GraphQLNamedType>(types: readonly T[], typeMap: TypeMap): T[] {
   return types.map((t) => mapType(t, typeMap)).filter(notNull);
 }
 

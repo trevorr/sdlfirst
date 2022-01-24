@@ -1,6 +1,6 @@
+import { GraphQLFileLoader } from '@graphql-tools/graphql-file-loader';
+import { loadSchema } from '@graphql-tools/load';
 import { Command, flags } from '@oclif/command';
-import { buildASTSchema, parse } from 'graphql';
-import { importSchema } from 'graphql-import';
 import { basename, dirname, join } from 'path';
 import SDLFirst from '..';
 import { defaultConfig, PathConfig } from '../config/PathConfig';
@@ -32,27 +32,30 @@ Augmented schema written to ${defaultOutput}
   static args = [{ name: 'file', required: true }];
 
   async run(): Promise<void> {
-    const {
-      args,
-      flags: { output, audience },
-    } = this.parse(Augment);
-    const inputSource = importSchema(args.file);
-    const inputAst = parse(inputSource);
-    const inputSchema = buildASTSchema(inputAst);
-    const config: Partial<PathConfig> = {};
-    if (output) {
-      config.sdlOutputDir = dirname(output);
-      config.sdlOutputFile = basename(output);
+    try {
+      const {
+        args,
+        flags: { output, audience },
+      } = this.parse(Augment);
+      const directivesPath = join(dirname(dirname(__dirname)), 'sdl', 'directives.graphql');
+      const inputSchema = await loadSchema([args.file, directivesPath], { loaders: [new GraphQLFileLoader()] });
+      const config: Partial<PathConfig> = {};
+      if (output) {
+        config.sdlOutputDir = dirname(output);
+        config.sdlOutputFile = basename(output);
+      }
+      const sdlFirst = new SDLFirst(inputSchema);
+      if (audience) {
+        sdlFirst.filterAudience(audience);
+      }
+      sdlFirst.addMutations();
+      if (!audience || audience === 'internal') {
+        sdlFirst.addInternalIds();
+      }
+      sdlFirst.writeSchema(config);
+      this.log(`Augmented schema written to ${output}`);
+    } catch (e) {
+      console.error(e);
     }
-    const sdlFirst = new SDLFirst(inputSchema);
-    if (audience) {
-      sdlFirst.filterAudience(audience);
-    }
-    sdlFirst.addMutations();
-    if (!audience || audience === 'internal') {
-      sdlFirst.addInternalIds();
-    }
-    sdlFirst.writeSchema(config);
-    this.log(`Augmented schema written to ${output}`);
   }
 }

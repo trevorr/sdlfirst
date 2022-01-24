@@ -42,7 +42,7 @@ export class SqlEnumMappingWriter {
     this.config = Object.freeze(Object.assign({}, defaultConfig, config, analyzer.getConfig()));
 
     const { schemaTypesNamespace } = this.config;
-    this.schemaNamespaceId = schemaTypesNamespace ? ts.createIdentifier(schemaTypesNamespace) : null;
+    this.schemaNamespaceId = schemaTypesNamespace ? ts.factory.createIdentifier(schemaTypesNamespace) : null;
 
     this.formatter = new TsFormatter(config);
   }
@@ -88,34 +88,34 @@ export class SqlEnumMappingWriter {
     let sqlType;
     let valueToNode: (value: string | number) => ts.Expression;
     if (typeInfo.valueType === EnumValueType.INT) {
-      sqlType = ts.createKeywordTypeNode(ts.SyntaxKind.NumberKeyword);
-      valueToNode = (value: string | number) => ts.createNumericLiteral(String(value));
+      sqlType = ts.factory.createKeywordTypeNode(ts.SyntaxKind.NumberKeyword);
+      valueToNode = (value: string | number) => ts.factory.createNumericLiteral(String(value));
     } else {
-      sqlType = ts.createKeywordTypeNode(ts.SyntaxKind.StringKeyword);
-      valueToNode = (value: string | number) => ts.createStringLiteral(String(value));
+      sqlType = ts.factory.createKeywordTypeNode(ts.SyntaxKind.StringKeyword);
+      valueToNode = (value: string | number) => ts.factory.createStringLiteral(String(value));
     }
     const valueEntries = Array.from(typeInfo.values.entries());
 
     const toSqlId = `${id}ToSql`;
     const toSqlMappings = valueEntries.map(([key, value]) =>
-      ts.createArrayLiteral([this.createSchemaEnumValueRef(id, key), valueToNode(value)])
+      ts.factory.createArrayLiteralExpression([this.createSchemaEnumValueRef(id, key), valueToNode(value)])
     );
-    const toSqlInit = ts.createNew(
-      ts.createIdentifier('Map'),
+    const toSqlInit = ts.factory.createNewExpression(
+      ts.factory.createIdentifier('Map'),
       [this.createSchemaTypeRef(id), sqlType],
-      [ts.createArrayLiteral(toSqlMappings, true)]
+      [ts.factory.createArrayLiteralExpression(toSqlMappings, true)]
     );
     exportIds.push(toSqlId);
     module.addStatement(this.createExportConst(toSqlId, toSqlInit));
 
     const fromSqlId = `SqlTo${id}`;
     const fromSqlMappings = valueEntries.map(([key, value]) =>
-      ts.createArrayLiteral([valueToNode(value), this.createSchemaEnumValueRef(id, key)])
+      ts.factory.createArrayLiteralExpression([valueToNode(value), this.createSchemaEnumValueRef(id, key)])
     );
-    const fromSqlInit = ts.createNew(
-      ts.createIdentifier('Map'),
+    const fromSqlInit = ts.factory.createNewExpression(
+      ts.factory.createIdentifier('Map'),
       [sqlType, this.createSchemaTypeRef(id)],
-      [ts.createArrayLiteral(fromSqlMappings, true)]
+      [ts.factory.createArrayLiteralExpression(fromSqlMappings, true)]
     );
     exportIds.push(fromSqlId);
     module.addStatement(this.createExportConst(fromSqlId, fromSqlInit));
@@ -124,12 +124,15 @@ export class SqlEnumMappingWriter {
     if (discriminatedObjects) {
       const toTypenameId = `SqlTo${id}__typename`;
       const toTypenameMappings = Array.from(discriminatedObjects.entries(), ([key, value]) =>
-        ts.createArrayLiteral([valueToNode(typeInfo.values.get(key)!), ts.createStringLiteral(value.type.name)])
+        ts.factory.createArrayLiteralExpression([
+          valueToNode(typeInfo.values.get(key)!),
+          ts.factory.createStringLiteral(value.type.name),
+        ])
       );
-      const toTypenameInit = ts.createNew(
-        ts.createIdentifier('Map'),
-        [sqlType, ts.createKeywordTypeNode(ts.SyntaxKind.StringKeyword)],
-        [ts.createArrayLiteral(toTypenameMappings, true)]
+      const toTypenameInit = ts.factory.createNewExpression(
+        ts.factory.createIdentifier('Map'),
+        [sqlType, ts.factory.createKeywordTypeNode(ts.SyntaxKind.StringKeyword)],
+        [ts.factory.createArrayLiteralExpression(toTypenameMappings, true)]
       );
       exportIds.push(toTypenameId);
       module.addStatement(this.createExportConst(toTypenameId, toTypenameInit));
@@ -141,9 +144,12 @@ export class SqlEnumMappingWriter {
   }
 
   private createExportConst(name: string | ts.BindingName, initializer?: ts.Expression): ts.VariableStatement {
-    return ts.createVariableStatement(
-      [ts.createModifier(ts.SyntaxKind.ExportKeyword)],
-      ts.createVariableDeclarationList([ts.createVariableDeclaration(name, undefined, initializer)], ts.NodeFlags.Const)
+    return ts.factory.createVariableStatement(
+      [ts.factory.createModifier(ts.SyntaxKind.ExportKeyword)],
+      ts.factory.createVariableDeclarationList(
+        [ts.factory.createVariableDeclaration(name, undefined, undefined, initializer)],
+        ts.NodeFlags.Const
+      )
     );
   }
 
@@ -151,20 +157,20 @@ export class SqlEnumMappingWriter {
     const { schemaNamespaceId } = this;
     let lhs;
     if (schemaNamespaceId) {
-      lhs = ts.createPropertyAccess(schemaNamespaceId, enumName);
+      lhs = ts.factory.createPropertyAccessExpression(schemaNamespaceId, enumName);
     } else {
-      lhs = ts.createIdentifier(enumName);
+      lhs = ts.factory.createIdentifier(enumName);
     }
-    return ts.createPropertyAccess(lhs, pascalCase(valueName));
+    return ts.factory.createPropertyAccessExpression(lhs, pascalCase(valueName));
   }
 
   private createSchemaTypeRef(name: string | ts.Identifier): ts.TypeReferenceNode {
     let qname: string | ts.EntityName = name;
     const { schemaNamespaceId } = this;
     if (schemaNamespaceId) {
-      qname = ts.createQualifiedName(schemaNamespaceId, qname);
+      qname = ts.factory.createQualifiedName(schemaNamespaceId, qname);
     }
-    return ts.createTypeReferenceNode(qname, undefined);
+    return ts.factory.createTypeReferenceNode(qname, undefined);
   }
 
   private createIndexModule(): TsModule {
@@ -173,11 +179,14 @@ export class SqlEnumMappingWriter {
     for (const mapping of this.mappings) {
       const { id, exports } = mapping;
       module.addStatement(
-        ts.createExportDeclaration(
+        ts.factory.createExportDeclaration(
           undefined,
           undefined,
-          ts.createNamedExports(exports.map((name) => ts.createExportSpecifier(undefined, name))),
-          ts.createStringLiteral(`./${id}`)
+          false,
+          ts.factory.createNamedExports(
+            exports.map((name) => ts.factory.createExportSpecifier(false, undefined, name))
+          ),
+          ts.factory.createStringLiteral(`./${id}`)
         )
       );
     }

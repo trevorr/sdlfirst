@@ -34,70 +34,74 @@ export default class Patch extends CodegenCommand {
   static args = CodegenCommand.args;
 
   async run(): Promise<void> {
-    const { baseline, output } = this.parsedFlags as OutputFlags<typeof Patch.flags>;
+    try {
+      const { baseline, output } = this.parsedFlags as OutputFlags<typeof Patch.flags>;
 
-    this.outputConfig.sdlTypesFile = prependExtension(defaultConfig.sdlTypesFile, newExtension);
-    this.outputConfig.sqlExtension = newExtension + defaultConfig.sqlExtension;
-    this.outputConfig.typescriptExtension = newExtension + defaultConfig.typescriptExtension;
+      this.outputConfig.sdlTypesFile = prependExtension(defaultConfig.sdlTypesFile, newExtension);
+      this.outputConfig.sqlExtension = newExtension + defaultConfig.sqlExtension;
+      this.outputConfig.typescriptExtension = newExtension + defaultConfig.typescriptExtension;
 
-    const files = await this.codegen();
+      const files = await this.codegen();
 
-    let newCount = 0;
-    let unchangedCount = 0;
-    let patchedCount = 0;
-    let failedCount = 0;
-    let baselessCount = 0;
-    for (const newFile of files) {
-      const newStr = fs.readFileSync(newFile, { encoding });
-      const oldFile = removeExtension(newFile, newExtension);
-      const targetFile = path.resolve(output, path.relative(baseline, oldFile));
-      if (!fs.existsSync(targetFile)) {
-        fs.mkdirSync(path.dirname(targetFile), { recursive: true });
-        fs.writeFileSync(targetFile, newStr, { encoding });
-        ++newCount;
-      } else if (fs.existsSync(oldFile)) {
-        const oldStr = fs.readFileSync(oldFile, { encoding });
-        if (oldStr === newStr) {
-          ++unchangedCount;
-        } else {
-          const oldTargetStr = fs.readFileSync(targetFile, { encoding });
-          let context = maxContext;
-          const patchStr = Diff.createPatch(targetFile, oldStr, newStr, undefined, undefined, { context });
-          let fuzzPatch = patchStr;
-          let fuzzFactor = 0;
-          let newTargetStr;
-          for (;;) {
-            // jsdiff's "fuzzFactor" is fairly useless so reduce the context amount instead (like GNU patch)
-            newTargetStr = Diff.applyPatch(oldTargetStr, fuzzPatch);
-            if (newTargetStr || context <= minContext) break;
-            --context;
-            ++fuzzFactor;
-            fuzzPatch = Diff.createPatch(targetFile, oldStr, newStr, undefined, undefined, { context });
-          }
-          if (newTargetStr) {
-            fs.writeFileSync(targetFile, newTargetStr, { encoding });
-            ++patchedCount;
-            if (fuzzFactor > 0) {
-              this.log(`Patched ${targetFile} with fuzz factor ${fuzzFactor}`);
-            }
+      let newCount = 0;
+      let unchangedCount = 0;
+      let patchedCount = 0;
+      let failedCount = 0;
+      let baselessCount = 0;
+      for (const newFile of files) {
+        const newStr = fs.readFileSync(newFile, { encoding });
+        const oldFile = removeExtension(newFile, newExtension);
+        const targetFile = path.resolve(output, path.relative(baseline, oldFile));
+        if (!fs.existsSync(targetFile)) {
+          fs.mkdirSync(path.dirname(targetFile), { recursive: true });
+          fs.writeFileSync(targetFile, newStr, { encoding });
+          ++newCount;
+        } else if (fs.existsSync(oldFile)) {
+          const oldStr = fs.readFileSync(oldFile, { encoding });
+          if (oldStr === newStr) {
+            ++unchangedCount;
           } else {
-            const patchFile = targetFile + patchExtension;
-            fs.writeFileSync(patchFile, patchStr, { encoding });
-            ++failedCount;
-            this.warn(`Failed to patch ${targetFile}; patch saved as ${patchFile}`);
+            const oldTargetStr = fs.readFileSync(targetFile, { encoding });
+            let context = maxContext;
+            const patchStr = Diff.createPatch(targetFile, oldStr, newStr, undefined, undefined, { context });
+            let fuzzPatch = patchStr;
+            let fuzzFactor = 0;
+            let newTargetStr;
+            for (;;) {
+              // jsdiff's "fuzzFactor" is fairly useless so reduce the context amount instead (like GNU patch)
+              newTargetStr = Diff.applyPatch(oldTargetStr, fuzzPatch);
+              if (newTargetStr || context <= minContext) break;
+              --context;
+              ++fuzzFactor;
+              fuzzPatch = Diff.createPatch(targetFile, oldStr, newStr, undefined, undefined, { context });
+            }
+            if (newTargetStr) {
+              fs.writeFileSync(targetFile, newTargetStr, { encoding });
+              ++patchedCount;
+              if (fuzzFactor > 0) {
+                this.log(`Patched ${targetFile} with fuzz factor ${fuzzFactor}`);
+              }
+            } else {
+              const patchFile = targetFile + patchExtension;
+              fs.writeFileSync(patchFile, patchStr, { encoding });
+              ++failedCount;
+              this.warn(`Failed to patch ${targetFile}; patch saved as ${patchFile}`);
+            }
           }
+        } else {
+          ++baselessCount;
+          this.warn(`No baseline for ${targetFile}; compare manually against ${newFile}`);
         }
-      } else {
-        ++baselessCount;
-        this.warn(`No baseline for ${targetFile}; compare manually against ${newFile}`);
+        fs.renameSync(newFile, oldFile);
       }
-      fs.renameSync(newFile, oldFile);
+      this.log(
+        `Patch completed: ${patchedCount} patched, ${newCount} new, ${unchangedCount} unchanged, ${
+          failedCount + baselessCount
+        } failed`
+      );
+    } catch (e) {
+      console.error(e);
     }
-    this.log(
-      `Patch completed: ${patchedCount} patched, ${newCount} new, ${unchangedCount} unchanged, ${
-        failedCount + baselessCount
-      } failed`
-    );
   }
 }
 

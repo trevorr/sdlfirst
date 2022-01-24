@@ -14,7 +14,11 @@ export default class Baseline extends CodegenCommand {
   static args = CodegenCommand.args;
 
   async run(): Promise<void> {
-    const files = await this.codegen();
-    this.log(`${files.length} baseline source files written to ${this.parsedFlags!.baseline}`);
+    try {
+      const files = await this.codegen();
+      this.log(`${files.length} baseline source files written to ${this.parsedFlags!.baseline}`);
+    } catch (e) {
+      console.error(e);
+    }
   }
 }

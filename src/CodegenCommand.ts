@@ -1,7 +1,9 @@
+import { GraphQLFileLoader } from '@graphql-tools/graphql-file-loader';
+import { loadSchema } from '@graphql-tools/load';
 import { Command, flags } from '@oclif/command';
 import { Input, OutputArgs, OutputFlags } from '@oclif/parser';
-import { buildASTSchema, DocumentNode, GraphQLSchema, parse } from 'graphql';
-import { importSchema } from 'graphql-import';
+import { GraphQLSchema } from 'graphql';
+import { dirname, join } from 'path';
 import SDLFirst from '.';
 import { PathConfig } from './config/PathConfig';
 import { SqlResolverConfig } from './SqlResolverWriter';
@@ -28,10 +30,8 @@ export default abstract class CodegenCommand extends Command {
 
   static args = [{ name: 'file', required: true }];
 
-  protected parsedArgs?: OutputArgs<any>;
+  protected parsedArgs?: OutputArgs;
   protected parsedFlags?: OutputFlags<typeof CodegenCommand.flags>;
-  protected inputSource?: string;
-  protected inputAst?: DocumentNode;
   protected inputSchema?: GraphQLSchema;
   protected outputConfig: Partial<PathConfig & SqlResolverConfig> = {};
 
@@ -39,9 +39,8 @@ export default abstract class CodegenCommand extends Command {
     const { args, flags } = this.parse(this.constructor as Input<typeof CodegenCommand.flags>);
     this.parsedArgs = args;
     this.parsedFlags = flags;
-    this.inputSource = importSchema(args.file);
-    this.inputAst = parse(this.inputSource);
-    this.inputSchema = buildASTSchema(this.inputAst);
+    const directivesPath = join(dirname(dirname(__dirname)), 'sdl', 'directives.graphql');
+    this.inputSchema = await loadSchema([args.file, directivesPath], { loaders: [new GraphQLFileLoader()] });
     this.outputConfig.baseDir = this.parsedFlags.baseline;
     this.outputConfig.contextType = this.parsedFlags['context-type'];
     this.outputConfig.contextTypeModule = this.parsedFlags['context-module'];
@@ -51,7 +50,7 @@ export default abstract class CodegenCommand extends Command {
     const sdlFirst = new SDLFirst(this.inputSchema!);
     const files: string[] = [];
     console.log('Writing types...');
-    files.push(...(await sdlFirst.writeTypes(this.outputConfig, this.inputAst)));
+    files.push(...(await sdlFirst.writeTypes(this.outputConfig)));
     console.log('Writing SQL metadata...');
     files.push(...(await sdlFirst.writeSqlMetadata(this.outputConfig)));
     console.log('Writing SQL tables...');

@@ -220,7 +220,11 @@ export class FieldVisitorWriter {
             ts.createTypeReferenceNode('string', undefined)
           )
         );
-        resultExpr = this.addVisitorColumnField(fieldMapping.columns[0].name, useTableName ? table.name : undefined, func);
+        resultExpr = this.addVisitorColumnField(
+          fieldMapping.columns[0].name,
+          useTableName ? table.name : undefined,
+          func
+        );
       } else if (this.analyzer.isConnectionType(fieldType)) {
         if (!fieldMapping) {
           throw new Error(`No mapping for connection field "${type.name}.${field.name}"`);

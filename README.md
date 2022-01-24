@@ -14,7 +14,7 @@ $ npm install -g sdlfirst
 $ sdlfirst COMMAND
 running command...
 $ sdlfirst (-v|--version|version)
-sdlfirst/0.0.1 linux-x64 node-v14.17.3
+sdlfirst/0.0.1 linux-x64 node-v16.13.2
 $ sdlfirst --help [COMMAND]
 USAGE
   $ sdlfirst COMMAND
@@ -34,8 +34,6 @@ USAGE
 output augmented SDL schema
 
 ```
-output augmented SDL schema
-
 USAGE
   $ sdlfirst augment FILE
 
@@ -56,8 +54,6 @@ _See code: [dist/commands/augment.js](https://github.com/trevorr/sdlfirst/blob/v
 output baseline generated source from SDL schema
 
 ```
-output baseline generated source from SDL schema
-
 USAGE
   $ sdlfirst baseline FILE
 
@@ -76,30 +72,26 @@ _See code: [dist/commands/baseline.js](https://github.com/trevorr/sdlfirst/blob/
 
 ## `sdlfirst help [COMMAND]`
 
-display help for sdlfirst
+Display help for sdlfirst.
 
 ```
-display help for <%= config.bin %>
-
 USAGE
   $ sdlfirst help [COMMAND]
 
 ARGUMENTS
-  COMMAND  command to show help for
+  COMMAND  Command to show help for.
 
 OPTIONS
-  --all  see all commands in CLI
+  -n, --nested-commands  Include all nested commands in the output.
 ```
 
-_See code: [@oclif/plugin-help](https://github.com/oclif/plugin-help/blob/v2.2.3/src/commands/help.ts)_
+_See code: [@oclif/plugin-help](https://github.com/oclif/plugin-help/blob/v5.1.10/src/commands/help.ts)_
 
 ## `sdlfirst patch FILE`
 
 patch generated source relative to baseline
 
 ```
-patch generated source relative to baseline
-
 USAGE
   $ sdlfirst patch FILE
 
@@ -122,8 +114,6 @@ _See code: [dist/commands/patch.js](https://github.com/trevorr/sdlfirst/blob/v0.
 output type definitions from SDL schema
 
 ```
-output type definitions from SDL schema
-
 USAGE
   $ sdlfirst types FILE
 
