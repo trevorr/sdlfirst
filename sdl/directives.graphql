@@ -121,6 +121,9 @@ directive @typeDiscriminator on FIELD_DEFINITION
 """Indicates that a Date or DateTime field always contains the creation date of the object. Implicitly read-only."""
 directive @createdAt on FIELD_DEFINITION
 
+"""Indicates that a Date or DateTime field always contains the last update of the object. Implicitly read-only."""
+directive @updatedAt on FIELD_DEFINITION
+
 """
 Indicates that objects of the containing type should be marked as deleted, rather than being
 actually deleted, and that the associated field indicates whether the object has been deleted.

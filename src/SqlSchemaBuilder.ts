@@ -560,7 +560,7 @@ export class SqlSchemaBuilder {
       notNull,
       autoIncrement,
     };
-    if (hasDirective(field, this.config.createdAtDirective)) {
+    if (hasDirective(field, this.config.createdAtDirective) || hasDirective(field, this.config.updatedAtDirective)) {
       column.default = 'CURRENT_TIMESTAMP';
     }
     if (hasDirective(field, this.config.updatedAtDirective)) {
