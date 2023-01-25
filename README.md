@@ -72,20 +72,20 @@ _See code: [dist/commands/baseline.js](https://github.com/trevorr/sdlfirst/blob/
 
 ## `sdlfirst help [COMMAND]`
 
-Display help for sdlfirst.
+display help for sdlfirst
 
 ```
 USAGE
   $ sdlfirst help [COMMAND]
 
 ARGUMENTS
-  COMMAND  Command to show help for.
+  COMMAND  command to show help for
 
 OPTIONS
-  -n, --nested-commands  Include all nested commands in the output.
+  --all  see all commands in CLI
 ```
 
-_See code: [@oclif/plugin-help](https://github.com/oclif/plugin-help/blob/v5.1.10/src/commands/help.ts)_
+_See code: [@oclif/plugin-help](https://github.com/oclif/plugin-help/blob/v3.2.18/src/commands/help.ts)_
 
 ## `sdlfirst patch FILE`
 

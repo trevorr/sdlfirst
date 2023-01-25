@@ -145,7 +145,6 @@ export class TsModule extends TsAbstractBlock {
         (m): ts.Statement =>
           ts.factory.createImportDeclaration(
             undefined,
-            undefined,
             ts.factory.createImportClause(
               false,
               m.id,

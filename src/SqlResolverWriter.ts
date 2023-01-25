@@ -370,7 +370,6 @@ export class SqlResolverWriter {
       }
       properties.push(
         ts.factory.createMethodDeclaration(
-          undefined,
           [ts.factory.createModifier(ts.SyntaxKind.AsyncKeyword)],
           undefined,
           field.name,
@@ -609,7 +608,7 @@ export class SqlResolverWriter {
             ts.factory.createArrowFunction(
               [ts.factory.createModifier(ts.SyntaxKind.AsyncKeyword)],
               undefined,
-              [ts.factory.createParameterDeclaration(undefined, undefined, undefined, trxId)],
+              [ts.factory.createParameterDeclaration(undefined, undefined, trxId)],
               undefined,
               undefined,
               trxBlock.toBlock()
@@ -1369,7 +1368,7 @@ export class SqlResolverWriter {
           ts.factory.createArrowFunction(
             [ts.factory.createModifier(ts.SyntaxKind.AsyncKeyword)],
             undefined,
-            [ts.factory.createParameterDeclaration(undefined, undefined, undefined, nodes.trxId)],
+            [ts.factory.createParameterDeclaration(undefined, undefined, nodes.trxId)],
             undefined,
             undefined,
             block.toBlock()
@@ -1863,7 +1862,7 @@ export class SqlResolverWriter {
   }
 
   private createSimpleParameter(name: string | ts.BindingName, type?: ts.TypeNode): ts.ParameterDeclaration {
-    return ts.factory.createParameterDeclaration(undefined, undefined, undefined, name, undefined, type);
+    return ts.factory.createParameterDeclaration(undefined, undefined, name, undefined, type);
   }
 
   private createArrowFunction(parameters: ts.ParameterDeclaration[], body: ts.ConciseBody): ts.ArrowFunction {

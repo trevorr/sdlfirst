@@ -181,7 +181,6 @@ export class SqlEnumMappingWriter {
       module.addStatement(
         ts.factory.createExportDeclaration(
           undefined,
-          undefined,
           false,
           ts.factory.createNamedExports(
             exports.map((name) => ts.factory.createExportSpecifier(false, undefined, name))

@@ -144,8 +144,8 @@ export class FieldVisitorWriter {
 
     const properties: ts.ObjectLiteralElementLike[] = [];
 
-    const sqlQueryResolverType = ts.createTypeReferenceNode(
-      ts.createQualifiedName(gqlsqlId, SqlQueryResolverType),
+    const sqlQueryResolverType = ts.factory.createTypeReferenceNode(
+      ts.factory.createQualifiedName(gqlsqlId, SqlQueryResolverType),
       undefined
     );
     let visitorsType;
@@ -155,16 +155,21 @@ export class FieldVisitorWriter {
       kind = 'edge';
       useTableName = false;
       // gqlsql.ShallowFieldVisitors<gqlsql.SqlEdgeResolver, gqlsql.SqlQueryResolver>
-      visitorsType = ts.createTypeReferenceNode(ts.createQualifiedName(gqlsqlId, ShallowFieldVisitorsType), [
-        ts.createTypeReferenceNode(ts.createQualifiedName(gqlsqlId, SqlEdgeResolverType), undefined),
-        sqlQueryResolverType,
-      ]);
-      properties.push(ts.createSpreadAssignment(ts.createPropertyAccess(gqlsqlId, EdgeVisitorsType)));
+      visitorsType = ts.factory.createTypeReferenceNode(
+        ts.factory.createQualifiedName(gqlsqlId, ShallowFieldVisitorsType),
+        [
+          ts.factory.createTypeReferenceNode(ts.factory.createQualifiedName(gqlsqlId, SqlEdgeResolverType), undefined),
+          sqlQueryResolverType,
+        ]
+      );
+      properties.push(
+        ts.factory.createSpreadAssignment(ts.factory.createPropertyAccessExpression(gqlsqlId, EdgeVisitorsType))
+      );
     } else {
       kind = 'object';
       useTableName = true;
       // gqlsql.FieldVisitors<gqlsql.SqlQueryResolver>
-      visitorsType = ts.createTypeReferenceNode(ts.createQualifiedName(gqlsqlId, FieldVisitorsType), [
+      visitorsType = ts.factory.createTypeReferenceNode(ts.factory.createQualifiedName(gqlsqlId, FieldVisitorsType), [
         sqlQueryResolverType,
       ]);
     }
@@ -184,9 +189,9 @@ export class FieldVisitorWriter {
       const fieldType = getNullableType(field.type);
       if (hasDirective(field, this.config.derivedDirective)) {
         body.push(
-          ts.createThrow(
-            ts.createNew(ts.createIdentifier('Error'), undefined, [
-              ts.createStringLiteral(`TODO: return derived field ${type.name}.${field.name}`),
+          ts.factory.createThrowStatement(
+            ts.factory.createNewExpression(ts.factory.createIdentifier('Error'), undefined, [
+              ts.factory.createStringLiteral(`TODO: return derived field ${type.name}.${field.name}`),
             ])
           )
         );
@@ -209,15 +214,17 @@ export class FieldVisitorWriter {
           `SqlTo${id}`
         );
         const arrowParam = 'value';
-        const func = ts.createArrowFunction(
+        const func = ts.factory.createArrowFunction(
           undefined,
           undefined,
           [this.createSimpleParameter(arrowParam)],
           undefined,
           undefined,
-          ts.createAsExpression(
-            ts.createCall(ts.createPropertyAccess(fromSqlId, 'get'), undefined, [ts.createIdentifier(arrowParam)]),
-            ts.createTypeReferenceNode('string', undefined)
+          ts.factory.createAsExpression(
+            ts.factory.createCallExpression(ts.factory.createPropertyAccessExpression(fromSqlId, 'get'), undefined, [
+              ts.factory.createIdentifier(arrowParam),
+            ]),
+            ts.factory.createTypeReferenceNode('string', undefined)
           )
         );
         resultExpr = this.addVisitorColumnField(
@@ -232,23 +239,29 @@ export class FieldVisitorWriter {
         if (!isJoin(fieldMapping)) {
           throw new Error(`Join mapping expected for connection field "${type.name}.${field.name}"`);
         }
-        const infoId = ts.createIdentifier(this.config.infoArgName);
+        const infoId = ts.factory.createIdentifier(this.config.infoArgName);
         const joinSpec = this.getJoinSpec(tableMapping, fieldMapping);
         const callParams: ts.Expression[] = [
-          ts.createPropertyAccess(infoId, 'fieldName'),
+          ts.factory.createPropertyAccessExpression(infoId, 'fieldName'),
           joinSpec,
-          ts.createCall(ts.createPropertyAccess(gqlsqlId, 'resolveArguments'), undefined, [infoId]),
+          ts.factory.createCallExpression(
+            ts.factory.createPropertyAccessExpression(gqlsqlId, 'resolveArguments'),
+            undefined,
+            [infoId]
+          ),
         ];
-        const nodeResolverId = ts.createIdentifier('nodeResolver');
+        const nodeResolverId = ts.factory.createIdentifier('nodeResolver');
         const configStatements = [];
 
         // addTable for many:many connection to join edge table to node table
         if (fieldMapping.nodeTable) {
           configStatements.push(
-            ts.createExpressionStatement(
-              ts.createCall(ts.createPropertyAccess(nodeResolverId, 'addTable'), undefined, [
-                this.getNodeJoinSpec(fieldMapping),
-              ])
+            ts.factory.createExpressionStatement(
+              ts.factory.createCallExpression(
+                ts.factory.createPropertyAccessExpression(nodeResolverId, 'addTable'),
+                undefined,
+                [this.getNodeJoinSpec(fieldMapping)]
+              )
             )
           );
         }
@@ -257,21 +270,25 @@ export class FieldVisitorWriter {
         const toTable = fieldMapping.toTable.table;
         for (const part of toTable.primaryKey.parts) {
           configStatements.push(
-            ts.createExpressionStatement(
-              ts.createCall(ts.createPropertyAccess(nodeResolverId, 'addOrderBy'), undefined, [
-                ts.createStringLiteral(part.column.name),
-                ts.createStringLiteral(toTable.name),
-              ])
+            ts.factory.createExpressionStatement(
+              ts.factory.createCallExpression(
+                ts.factory.createPropertyAccessExpression(nodeResolverId, 'addOrderBy'),
+                undefined,
+                [ts.factory.createStringLiteral(part.column.name), ts.factory.createStringLiteral(toTable.name)]
+              )
             )
           );
         }
 
         body.push(
-          ts.createExpressionStatement(
-            ts.createCall(
-              ts.createPropertyAccess(
-                ts.createCall(
-                  ts.createPropertyAccess(ts.createIdentifier(this.config.contextArgName), 'addConnectionField'),
+          ts.factory.createExpressionStatement(
+            ts.factory.createCallExpression(
+              ts.factory.createPropertyAccessExpression(
+                ts.factory.createCallExpression(
+                  ts.factory.createPropertyAccessExpression(
+                    ts.factory.createIdentifier(this.config.contextArgName),
+                    'addConnectionField'
+                  ),
                   undefined,
                   callParams
                 ),
@@ -280,13 +297,13 @@ export class FieldVisitorWriter {
               undefined,
               [
                 infoId,
-                ts.createArrowFunction(
+                ts.factory.createArrowFunction(
                   undefined,
                   undefined,
                   [this.createSimpleParameter(nodeResolverId)],
                   undefined,
                   undefined,
-                  ts.createBlock(configStatements)
+                  ts.factory.createBlock(configStatements)
                 ),
               ]
             )
@@ -341,9 +358,9 @@ export class FieldVisitorWriter {
           const configName = `configure${configType.name}Resolver`;
           const configId =
             configType === type
-              ? ts.createIdentifier(configName)
+              ? ts.factory.createIdentifier(configName)
               : module.addNamedImport(`./${configType.name}`, configName);
-          resultExpr = ts.createCall(configId, undefined, [resultExpr!]);
+          resultExpr = ts.factory.createCallExpression(configId, undefined, [resultExpr!]);
         }
       } else if (isListType(fieldType)) {
         if (!fieldMapping) {
@@ -352,15 +369,15 @@ export class FieldVisitorWriter {
         if (!isJoin(fieldMapping)) {
           throw new Error(`Join mapping expected for list field "${type.name}.${field.name}"`);
         }
-        const contextId = ts.createIdentifier(this.config.contextArgName);
-        const infoId = ts.createIdentifier(this.config.infoArgName);
+        const contextId = ts.factory.createIdentifier(this.config.contextArgName);
+        const infoId = ts.factory.createIdentifier(this.config.infoArgName);
         const joinSpec = this.getJoinSpec(tableMapping, fieldMapping);
         let methodName;
-        const params: ts.Expression[] = [ts.createPropertyAccess(infoId, 'fieldName'), joinSpec];
+        const params: ts.Expression[] = [ts.factory.createPropertyAccessExpression(infoId, 'fieldName'), joinSpec];
         const elementType = getNullableType<GraphQLOutputType>(fieldType.ofType);
         if (isScalarType(elementType) || isEnumType(elementType)) {
           methodName = 'addColumnListField';
-          params.push(ts.createStringLiteral(fieldMapping.listColumns![0].name));
+          params.push(ts.factory.createStringLiteral(fieldMapping.listColumns![0].name));
         } else if (isTableType(elementType)) {
           methodName = 'addObjectListField';
         } else {
@@ -368,28 +385,41 @@ export class FieldVisitorWriter {
             `Unsupported element type "${elementType.toString()}" for list field "${type.name}.${field.name}"`
           );
         }
-        let resolver = ts.createCall(ts.createPropertyAccess(contextId, methodName), undefined, params);
+        let resolver = ts.factory.createCallExpression(
+          ts.factory.createPropertyAccessExpression(contextId, methodName),
+          undefined,
+          params
+        );
         const orderColumns = fieldMapping.sequenceColumn ? [fieldMapping.sequenceColumn] : fieldMapping.listColumns!;
         for (const orderColumn of orderColumns) {
-          resolver = ts.createCall(ts.createPropertyAccess(resolver, 'addOrderBy'), undefined, [
-            ts.createStringLiteral(orderColumn.name),
-          ]);
+          resolver = ts.factory.createCallExpression(
+            ts.factory.createPropertyAccessExpression(resolver, 'addOrderBy'),
+            undefined,
+            [ts.factory.createStringLiteral(orderColumn.name)]
+          );
         }
         if (isTableType(elementType) && fieldMapping.listColumns) {
           const joinSpec = this.getColumnsJoinSpec(elementType, fieldMapping.toTable.table, fieldMapping.listColumns);
           if (joinSpec) {
-            resolver = ts.createCall(ts.createPropertyAccess(resolver, 'addTable'), undefined, [joinSpec]);
+            resolver = ts.factory.createCallExpression(
+              ts.factory.createPropertyAccessExpression(resolver, 'addTable'),
+              undefined,
+              [joinSpec]
+            );
           }
         }
         resultExpr = resolver;
       }
       if (resultExpr) {
-        body.push(kind === 'object' ? ts.createReturn(resultExpr) : ts.createExpressionStatement(resultExpr));
+        body.push(
+          kind === 'object'
+            ? ts.factory.createReturnStatement(resultExpr)
+            : ts.factory.createExpressionStatement(resultExpr)
+        );
       }
 
       properties.push(
-        ts.createMethod(
-          undefined,
+        ts.factory.createMethodDeclaration(
           undefined,
           undefined,
           field.name,
@@ -397,28 +427,32 @@ export class FieldVisitorWriter {
           undefined,
           params,
           undefined,
-          ts.createBlock(body, true)
+          ts.factory.createBlock(body, true)
         )
       );
     }
     if (!properties.length) return;
 
-    const visitorsId = module.declareConst(VisitorsConst, visitorsType, ts.createObjectLiteral(properties, true));
+    const visitorsId = module.declareConst(
+      VisitorsConst,
+      visitorsType,
+      ts.factory.createObjectLiteralExpression(properties, true)
+    );
 
     let defaultExpr: ts.Expression = visitorsId;
     if (identityVisitorsId) {
-      defaultExpr = ts.createCall(ts.createPropertyAccess(ts.createIdentifier('Object'), 'assign'), undefined, [
-        ts.createObjectLiteral(),
-        identityVisitorsId,
-        defaultExpr,
-      ]);
+      defaultExpr = ts.factory.createCallExpression(
+        ts.factory.createPropertyAccessExpression(ts.factory.createIdentifier('Object'), 'assign'),
+        undefined,
+        [ts.factory.createObjectLiteralExpression(), identityVisitorsId, defaultExpr]
+      );
     }
-    module.addStatement(ts.createExportDefault(defaultExpr));
+    module.addStatement(ts.factory.createExportDefault(defaultExpr));
 
     // create resolver configuration function for interface tables,
     // since they need a __typename column and object tables added
     if (isInterfaceType(type)) {
-      const resolverId = ts.createIdentifier('resolver');
+      const resolverId = ts.factory.createIdentifier('resolver');
       const body: ts.Statement[] = [];
 
       if (typeInfo.typeDiscriminatorField) {
@@ -431,21 +465,25 @@ export class FieldVisitorWriter {
             `SqlTo${id}__typename`
           );
           const arrowParam = 'value';
-          const func = ts.createArrowFunction(
+          const func = ts.factory.createArrowFunction(
             undefined,
             undefined,
             [this.createSimpleParameter(arrowParam)],
             undefined,
             undefined,
-            ts.createNonNullExpression(
-              ts.createCall(ts.createPropertyAccess(toTypenameId, 'get'), undefined, [ts.createIdentifier(arrowParam)])
+            ts.factory.createNonNullExpression(
+              ts.factory.createCallExpression(
+                ts.factory.createPropertyAccessExpression(toTypenameId, 'get'),
+                undefined,
+                [ts.factory.createIdentifier(arrowParam)]
+              )
             )
           );
           body.push(
-            ts.createExpressionStatement(
+            ts.factory.createExpressionStatement(
               this.addColumnField(
                 resolverId,
-                ts.createStringLiteral('__typename'),
+                ts.factory.createStringLiteral('__typename'),
                 fieldMapping.columns[0].name,
                 table.name,
                 func
@@ -461,41 +499,44 @@ export class FieldVisitorWriter {
         if (objMapping && objMapping.table !== table) {
           const toTable = objMapping.table;
           body.push(
-            ts.createExpressionStatement(
-              ts.createCall(ts.createPropertyAccess(resolverId, 'addTable'), undefined, [
-                ts.createObjectLiteral([
-                  ts.createPropertyAssignment('toTable', ts.createStringLiteral(toTable.name)),
-                  ts.createPropertyAssignment(
-                    'toColumns',
-                    ts.createArrayLiteral(
-                      toTable.primaryKey.parts.map((part) => ts.createStringLiteral(part.column.name))
-                    )
-                  ),
-                  ts.createPropertyAssignment('fromTable', ts.createStringLiteral(table.name)),
-                  ts.createPropertyAssignment(
-                    'fromColumns',
-                    ts.createArrayLiteral(
-                      table.primaryKey.parts.map((part) => ts.createStringLiteral(part.column.name))
-                    )
-                  ),
-                ]),
-              ])
+            ts.factory.createExpressionStatement(
+              ts.factory.createCallExpression(
+                ts.factory.createPropertyAccessExpression(resolverId, 'addTable'),
+                undefined,
+                [
+                  ts.factory.createObjectLiteralExpression([
+                    ts.factory.createPropertyAssignment('toTable', ts.factory.createStringLiteral(toTable.name)),
+                    ts.factory.createPropertyAssignment(
+                      'toColumns',
+                      ts.factory.createArrayLiteralExpression(
+                        toTable.primaryKey.parts.map((part) => ts.factory.createStringLiteral(part.column.name))
+                      )
+                    ),
+                    ts.factory.createPropertyAssignment('fromTable', ts.factory.createStringLiteral(table.name)),
+                    ts.factory.createPropertyAssignment(
+                      'fromColumns',
+                      ts.factory.createArrayLiteralExpression(
+                        table.primaryKey.parts.map((part) => ts.factory.createStringLiteral(part.column.name))
+                      )
+                    ),
+                  ]),
+                ]
+              )
             )
           );
         }
       }
 
-      body.push(ts.createReturn(resolverId));
+      body.push(ts.factory.createReturnStatement(resolverId));
       module.addStatement(
-        ts.createFunctionDeclaration(
-          undefined,
-          [ts.createModifier(ts.SyntaxKind.ExportKeyword)],
+        ts.factory.createFunctionDeclaration(
+          [ts.factory.createModifier(ts.SyntaxKind.ExportKeyword)],
           undefined,
           `configure${type.name}Resolver`,
           undefined,
           [this.createSimpleParameter(resolverId, sqlQueryResolverType)],
           sqlQueryResolverType,
-          ts.createBlock(body, true)
+          ts.factory.createBlock(body, true)
         )
       );
     }
@@ -590,13 +631,13 @@ export class FieldVisitorWriter {
   ): ts.Expression {
     const params = [];
     if (typeName) {
-      params.push(ts.createPropertyAssignment('typeName', ts.createStringLiteral(typeName)));
+      params.push(ts.factory.createPropertyAssignment('typeName', ts.factory.createStringLiteral(typeName)));
     }
-    params.push(ts.createPropertyAssignment('toTable', ts.createStringLiteral(toTable.name)));
+    params.push(ts.factory.createPropertyAssignment('toTable', ts.factory.createStringLiteral(toTable.name)));
     this.addJoinSpecColumns(params, 'to', toColumns, fromTable);
-    params.push(ts.createPropertyAssignment('fromTable', ts.createStringLiteral(fromTable.name)));
+    params.push(ts.factory.createPropertyAssignment('fromTable', ts.factory.createStringLiteral(fromTable.name)));
     this.addJoinSpecColumns(params, 'from', fromColumns, toTable);
-    return ts.createObjectLiteral(params, true);
+    return ts.factory.createObjectLiteralExpression(params, true);
   }
 
   private addJoinSpecColumns(
@@ -613,9 +654,9 @@ export class FieldVisitorWriter {
     }
 
     params.push(
-      ts.createPropertyAssignment(
+      ts.factory.createPropertyAssignment(
         `${fromOrTo}Columns`,
-        ts.createArrayLiteral(columns.map((column) => ts.createStringLiteral(column.name)))
+        ts.factory.createArrayLiteralExpression(columns.map((column) => ts.factory.createStringLiteral(column.name)))
       )
     );
 
@@ -624,12 +665,15 @@ export class FieldVisitorWriter {
         throw new Error(`Table ID expected for ${targetTable.name}`);
       }
       params.push(
-        ts.createPropertyAssignment(
+        ts.factory.createPropertyAssignment(
           `${fromOrTo}Restrictions`,
-          ts.createArrayLiteral([
-            ts.createObjectLiteral([
-              ts.createPropertyAssignment('column', ts.createStringLiteral(discriminatorColumn.name)),
-              ts.createPropertyAssignment('value', ts.createStringLiteral(targetTable.discriminatorValue)),
+          ts.factory.createArrayLiteralExpression([
+            ts.factory.createObjectLiteralExpression([
+              ts.factory.createPropertyAssignment('column', ts.factory.createStringLiteral(discriminatorColumn.name)),
+              ts.factory.createPropertyAssignment(
+                'value',
+                ts.factory.createStringLiteral(targetTable.discriminatorValue)
+              ),
             ]),
           ])
         )
@@ -653,8 +697,8 @@ export class FieldVisitorWriter {
 
   private addVisitorColumnField(columnName: string, tableName?: string, func?: ts.Expression): ts.Expression {
     return this.addColumnField(
-      ts.createIdentifier(this.config.contextArgName),
-      ts.createPropertyAccess(ts.createIdentifier(this.config.infoArgName), 'fieldName'),
+      ts.factory.createIdentifier(this.config.contextArgName),
+      ts.factory.createPropertyAccessExpression(ts.factory.createIdentifier(this.config.infoArgName), 'fieldName'),
       columnName,
       tableName,
       func
@@ -668,54 +712,68 @@ export class FieldVisitorWriter {
     tableName?: string,
     func?: ts.Expression
   ): ts.Expression {
-    const params = [field, ts.createStringLiteral(columnName)];
+    const params = [field, ts.factory.createStringLiteral(columnName)];
     if (tableName) {
-      params.push(ts.createStringLiteral(tableName));
+      params.push(ts.factory.createStringLiteral(tableName));
     } else if (func) {
-      params.push(ts.createIdentifier('undefined'));
+      params.push(ts.factory.createIdentifier('undefined'));
     }
     if (func) {
       params.push(func);
     }
-    return ts.createCall(ts.createPropertyAccess(resolver, 'addColumnField'), undefined, params);
+    return ts.factory.createCallExpression(
+      ts.factory.createPropertyAccessExpression(resolver, 'addColumnField'),
+      undefined,
+      params
+    );
   }
 
   private addObjectField(joinSpec?: ts.Expression): ts.Expression {
     const callParams: ts.Expression[] = [
-      ts.createPropertyAccess(ts.createIdentifier(this.config.infoArgName), 'fieldName'),
+      ts.factory.createPropertyAccessExpression(ts.factory.createIdentifier(this.config.infoArgName), 'fieldName'),
     ];
     if (joinSpec) {
       callParams.push(joinSpec);
     }
-    return ts.createCall(
-      ts.createPropertyAccess(ts.createIdentifier(this.config.contextArgName), 'addObjectField'),
+    return ts.factory.createCallExpression(
+      ts.factory.createPropertyAccessExpression(
+        ts.factory.createIdentifier(this.config.contextArgName),
+        'addObjectField'
+      ),
       undefined,
       callParams
     );
   }
 
   private addUnionField(joinSpec: ts.Expression[]): ts.Expression {
-    return ts.createCall(
-      ts.createPropertyAccess(ts.createIdentifier(this.config.contextArgName), 'addUnionField'),
+    return ts.factory.createCallExpression(
+      ts.factory.createPropertyAccessExpression(
+        ts.factory.createIdentifier(this.config.contextArgName),
+        'addUnionField'
+      ),
       undefined,
       [
-        ts.createPropertyAccess(ts.createIdentifier(this.config.infoArgName), 'fieldName'),
-        ts.createArrayLiteral(joinSpec),
+        ts.factory.createPropertyAccessExpression(ts.factory.createIdentifier(this.config.infoArgName), 'fieldName'),
+        ts.factory.createArrayLiteralExpression(joinSpec),
       ]
     );
   }
 
   private addQidField(module: TsModule, gqlsqlId: ts.Identifier, type: GraphQLCompositeType): ts.Expression {
     const metaId = module.addImport(path.relative(this.config.resolversDir, this.config.databaseMetadataDir), 'dbmeta');
-    return ts.createCall(ts.createPropertyAccess(gqlsqlId, 'addQidField'), undefined, [
-      ts.createIdentifier(this.config.contextArgName),
-      ts.createPropertyAccess(ts.createIdentifier(this.config.infoArgName), 'fieldName'),
-      ts.createPropertyAccess(metaId, type.name),
-    ]);
+    return ts.factory.createCallExpression(
+      ts.factory.createPropertyAccessExpression(gqlsqlId, 'addQidField'),
+      undefined,
+      [
+        ts.factory.createIdentifier(this.config.contextArgName),
+        ts.factory.createPropertyAccessExpression(ts.factory.createIdentifier(this.config.infoArgName), 'fieldName'),
+        ts.factory.createPropertyAccessExpression(metaId, type.name),
+      ]
+    );
   }
 
   private createSimpleParameter(name: string | ts.Identifier, type?: ts.TypeNode): ts.ParameterDeclaration {
-    return ts.createParameter(undefined, undefined, undefined, name, undefined, type);
+    return ts.factory.createParameterDeclaration(undefined, undefined, name, undefined, type);
   }
 
   private addVisitor(kind: string, info: VisitorInfo): void {
@@ -736,17 +794,23 @@ export class FieldVisitorWriter {
         for (const visitor of visitors) {
           const { id } = visitor;
           const idIdentifier = module.addImport(`./${id}`, id);
-          visitorProperties.push(ts.createShorthandPropertyAssignment(idIdentifier));
+          visitorProperties.push(ts.factory.createShorthandPropertyAssignment(idIdentifier));
         }
-        kindProperties.push(ts.createPropertyAssignment(kind, ts.createObjectLiteral(visitorProperties, true)));
+        kindProperties.push(
+          ts.factory.createPropertyAssignment(kind, ts.factory.createObjectLiteralExpression(visitorProperties, true))
+        );
       }
     }
     const gqlsqlId = module.addNamespaceImport(this.config.gqlsqlModule, this.config.gqlsqlNamespace);
-    const visitorsType = ts.createTypeReferenceNode(PartialType, [
-      ts.createTypeReferenceNode(ts.createQualifiedName(gqlsqlId, SqlTypeVisitorsType), undefined),
+    const visitorsType = ts.factory.createTypeReferenceNode(PartialType, [
+      ts.factory.createTypeReferenceNode(ts.factory.createQualifiedName(gqlsqlId, SqlTypeVisitorsType), undefined),
     ]);
-    const visitorsId = module.declareConst(VisitorsConst, visitorsType, ts.createObjectLiteral(kindProperties, true));
-    module.addStatement(ts.createExportDefault(visitorsId));
+    const visitorsId = module.declareConst(
+      VisitorsConst,
+      visitorsType,
+      ts.factory.createObjectLiteralExpression(kindProperties, true)
+    );
+    module.addStatement(ts.factory.createExportDefault(visitorsId));
     return module;
   }
 

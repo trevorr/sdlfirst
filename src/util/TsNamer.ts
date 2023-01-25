@@ -73,7 +73,7 @@ export class TsNamer {
       }
       name = `${name}${counter}`;
     }
-    const id = ts.createIdentifier(name);
+    const id = ts.factory.createIdentifier(name);
     this.nameIdMap.set(name, id);
     if (user) {
       this.userIdMap.set(user, id);
@@ -96,7 +96,7 @@ export class TsNamer {
     initializer?: ts.Expression
   ): ts.BindingElement {
     const id = this.createIdentifier(name, user);
-    return ts.createBindingElement(
+    return ts.factory.createBindingElement(
       undefined,
       ts.idText(id) !== propertyName ? propertyName : undefined,
       id,
@@ -108,6 +108,6 @@ export class TsNamer {
     if (!id) {
       id = this.createIdentifier(name);
     }
-    return ts.idText(id) !== name ? ts.createPropertyAssignment(name, id) : ts.createShorthandPropertyAssignment(id);
+    return ts.idText(id) !== name ? ts.factory.createPropertyAssignment(name, id) : ts.factory.createShorthandPropertyAssignment(id);
   }
 }

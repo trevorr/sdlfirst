@@ -68,9 +68,9 @@ class JoinBuilderImpl implements JoinBuilder {
   ): this {
     const toColumnExpr =
       typeof toColumn === 'string'
-        ? ts.createStringLiteral(`${this.tableAlias}.${toColumn}`)
-        : ts.createTemplateExpression(ts.createTemplateHead(`${this.tableAlias}.`), [
-            ts.createTemplateSpan(toColumn, ts.createTemplateTail('')),
+        ? ts.factory.createStringLiteral(`${this.tableAlias}.${toColumn}`)
+        : ts.factory.createTemplateExpression(ts.factory.createTemplateHead(`${this.tableAlias}.`), [
+            ts.factory.createTemplateSpan(toColumn, ts.factory.createTemplateTail('')),
           ]);
     this.addProperty(fromTableAlias, fromColumn, toColumnExpr);
     return this;
@@ -81,20 +81,28 @@ class JoinBuilderImpl implements JoinBuilder {
     fromColumn: string,
     fromTableAlias: string = this.qeb.getTableAlias()
   ): this {
-    const toValueExpr = ts.createCall(ts.createPropertyAccess(this.qeb.getKnex(), 'raw'), undefined, [
-      ts.createStringLiteral('?'),
-      ts.createArrayLiteral([typeof toValue === 'string' ? ts.createStringLiteral(toValue) : toValue]),
-    ]);
+    const toValueExpr = ts.factory.createCallExpression(
+      ts.factory.createPropertyAccessExpression(this.qeb.getKnex(), 'raw'),
+      undefined,
+      [
+        ts.factory.createStringLiteral('?'),
+        ts.factory.createArrayLiteralExpression([
+          typeof toValue === 'string' ? ts.factory.createStringLiteral(toValue) : toValue,
+        ]),
+      ]
+    );
     this.addProperty(fromTableAlias, fromColumn, toValueExpr);
     return this;
   }
 
   private addProperty(fromTableAlias: string, fromColumn: string, expr: ts.Expression): void {
-    this.properties.push(ts.createPropertyAssignment(ts.createStringLiteral(`${fromTableAlias}.${fromColumn}`), expr));
+    this.properties.push(
+      ts.factory.createPropertyAssignment(ts.factory.createStringLiteral(`${fromTableAlias}.${fromColumn}`), expr)
+    );
   }
 
   public endJoin(): QueryExpressionBuilder {
-    return this.qeb.joinOn(this.tableName, this.tableAlias, ts.createObjectLiteral(this.properties));
+    return this.qeb.joinOn(this.tableName, this.tableAlias, ts.factory.createObjectLiteralExpression(this.properties));
   }
 }
 
@@ -107,7 +115,9 @@ export class RootQueryExpressionBuilder implements QueryExpressionBuilder {
     tableName: string,
     private readonly tableAlias: string = tableName
   ) {
-    this.expr = ts.createCall(trx, undefined, [ts.createStringLiteral(this.aliasTable(tableName, tableAlias))]);
+    this.expr = ts.factory.createCallExpression(trx, undefined, [
+      ts.factory.createStringLiteral(this.aliasTable(tableName, tableAlias)),
+    ]);
   }
 
   public getKnex(): ts.Expression {
@@ -132,17 +142,17 @@ export class RootQueryExpressionBuilder implements QueryExpressionBuilder {
   }
 
   public where(column: string, expr: ts.Expression, tableAlias: string = this.tableAlias): this {
-    this.callMethod('where', [ts.createStringLiteral(`${tableAlias}.${column}`), expr]);
+    this.callMethod('where', [ts.factory.createStringLiteral(`${tableAlias}.${column}`), expr]);
     return this;
   }
 
   public whereNull(column: string, tableAlias: string = this.tableAlias): this {
-    this.callMethod('whereNull', [ts.createStringLiteral(`${tableAlias}.${column}`)]);
+    this.callMethod('whereNull', [ts.factory.createStringLiteral(`${tableAlias}.${column}`)]);
     return this;
   }
 
   public select(column: string, tableAlias: string = this.tableAlias): this {
-    this.callMethod('select', [ts.createStringLiteral(`${tableAlias}.${column}`)]);
+    this.callMethod('select', [ts.factory.createStringLiteral(`${tableAlias}.${column}`)]);
     return this;
   }
 
@@ -152,14 +162,18 @@ export class RootQueryExpressionBuilder implements QueryExpressionBuilder {
 
   private aliasTableExpr(tableName: string | ts.Expression, tableAlias: string): ts.Expression {
     return typeof tableName === 'string'
-      ? ts.createStringLiteral(this.aliasTable(tableName, tableAlias))
-      : ts.createTemplateExpression(ts.createTemplateHead(''), [
-          ts.createTemplateSpan(tableName, ts.createTemplateTail(` as ${tableAlias}`)),
+      ? ts.factory.createStringLiteral(this.aliasTable(tableName, tableAlias))
+      : ts.factory.createTemplateExpression(ts.factory.createTemplateHead(''), [
+          ts.factory.createTemplateSpan(tableName, ts.factory.createTemplateTail(` as ${tableAlias}`)),
         ]);
   }
 
   private callMethod(name: string, args: ts.Expression[]): void {
-    this.expr = ts.createCall(ts.createPropertyAccess(this.expr, name), undefined, args);
+    this.expr = ts.factory.createCallExpression(
+      ts.factory.createPropertyAccessExpression(this.expr, name),
+      undefined,
+      args
+    );
   }
 }
 
