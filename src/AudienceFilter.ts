@@ -2,11 +2,13 @@ import {
   EnumTypeDefinitionNode,
   FieldDefinitionNode,
   getNamedType,
+  GraphQLArgument,
+  GraphQLArgumentConfig,
   GraphQLDirective,
   GraphQLEnumType,
-  GraphQLFieldConfig,
   GraphQLFieldConfigArgumentMap,
   GraphQLFieldConfigMap,
+  GraphQLFieldMap,
   GraphQLInputFieldConfigMap,
   GraphQLInputObjectType,
   GraphQLInterfaceType,
@@ -25,7 +27,7 @@ import {
   ObjectTypeDefinitionNode,
   StringValueNode,
   UnionTypeDefinitionNode,
-  ValueNode,
+  ValueNode
 } from 'graphql';
 import { DirectiveConfig } from './config/DirectiveConfig';
 import { findDirective, getDirectiveArgument, WithDirectives } from './util/ast-util';
@@ -94,10 +96,7 @@ export class AudienceFilter {
     return {
       ...astNode,
       interfaces: astNode.interfaces?.filter((t) => this.typeNames.has(t.name.value)),
-      fields: astNode.fields?.filter((f) => {
-        const field = type.getFields()[f.name.value];
-        return field != null && this.isIncluded(field) && this.isIncluded(getNamedType(field.type));
-      }),
+      fields: this.filterFieldNodes(astNode.fields, type.getFields()),
     };
   }
 
@@ -116,16 +115,13 @@ export class AudienceFilter {
   ): InterfaceTypeDefinitionNode {
     return {
       ...astNode,
-      fields: astNode.fields?.filter((f) => {
-        const field = type.getFields()[f.name.value];
-        return field != null && this.isIncluded(field) && this.isIncluded(getNamedType(field.type));
-      }),
+      fields: this.filterFieldNodes(astNode.fields, type.getFields()),
     };
   }
 
-  private filterFieldConfigMap<TSource, TContext>(
-    fields: GraphQLFieldConfigMap<TSource, TContext>
-  ): GraphQLFieldConfigMap<TSource, TContext> {
+  private filterFieldConfigMap(
+    fields: GraphQLFieldConfigMap<unknown, unknown>
+  ): GraphQLFieldConfigMap<unknown, unknown> {
     return Object.fromEntries(
       Object.entries(fields)
         .map(([key, field]) => {
@@ -140,7 +136,7 @@ export class AudienceFilter {
                   ...field,
                   type,
                   args: field.args && this.filterFieldConfigArgumentMap(field.args),
-                  astNode: field.astNode && this.filterFieldNode(field.astNode, field),
+                  astNode: field.astNode && this.filterFieldNode(field.astNode, field.args),
                 },
               ];
             }
@@ -150,11 +146,32 @@ export class AudienceFilter {
     );
   }
 
-  private filterFieldNode(astNode: FieldDefinitionNode, field: GraphQLFieldConfig<any, any>): FieldDefinitionNode {
+  private filterFieldNodes(
+    astNodes: readonly FieldDefinitionNode[] | undefined,
+    fields: GraphQLFieldMap<unknown, unknown>
+  ): FieldDefinitionNode[] | undefined {
+    return astNodes
+      ?.map((f) => {
+        const field = fields[f.name.value];
+        if (field != null && this.isIncluded(field) && this.isIncluded(getNamedType(field.type))) {
+          const args = field.args.reduce<Record<string, GraphQLArgument>>((args, arg) => {
+            args[arg.name] = arg;
+            return args;
+          }, {});
+          return this.filterFieldNode(f, args);
+        }
+      })
+      .filter(notNull);
+  }
+
+  private filterFieldNode(
+    astNode: FieldDefinitionNode,
+    args: Record<string, GraphQLArgument | GraphQLArgumentConfig> | undefined
+  ): FieldDefinitionNode {
     return {
       ...astNode,
       arguments: astNode.arguments?.filter((a) => {
-        const arg = field.args?.[a.name.value];
+        const arg = args?.[a.name.value];
         return arg != null && this.isIncluded(arg) && this.isIncluded(getNamedType(arg.type));
       }),
     };

@@ -388,4 +388,4 @@ directive @audience(
   Specifies the list of user audiences that are excluded from the annotated type. All other audiences are included.
   """
   exclude: [String!]
-) on SCALAR | OBJECT | FIELD_DEFINITION | INTERFACE | UNION | ENUM | ENUM_VALUE | INPUT_OBJECT | INPUT_FIELD_DEFINITION
+) on SCALAR | OBJECT | FIELD_DEFINITION | INTERFACE | UNION | ENUM | ENUM_VALUE | INPUT_OBJECT | INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION
