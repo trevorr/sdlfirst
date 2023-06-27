@@ -1,9 +1,9 @@
-import { GraphQLFileLoader } from '@graphql-tools/graphql-file-loader';
-import { loadSchema } from '@graphql-tools/load';
 import { Command, flags } from '@oclif/command';
+import { buildASTSchema } from 'graphql';
 import { basename, dirname, join } from 'path';
 import SDLFirst from '..';
-import { defaultConfig, PathConfig } from '../config/PathConfig';
+import { PathConfig, defaultConfig } from '../config/PathConfig';
+import { loadSchema } from '../loadSchema';
 
 const defaultOutput = join(defaultConfig.baseDir, defaultConfig.sdlOutputDir, defaultConfig.sdlOutputFile);
 
@@ -38,7 +38,8 @@ Augmented schema written to ${defaultOutput}
         flags: { output, audience },
       } = this.parse(Augment);
       const directivesPath = join(dirname(dirname(__dirname)), 'sdl', 'directives.graphql');
-      const inputSchema = await loadSchema([args.file, directivesPath], { loaders: [new GraphQLFileLoader()] });
+      const schemaAst = await loadSchema([args.file, directivesPath]);
+      const inputSchema = buildASTSchema(schemaAst);
       const config: Partial<PathConfig> = {};
       if (output) {
         config.sdlOutputDir = dirname(output);

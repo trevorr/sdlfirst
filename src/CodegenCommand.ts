@@ -1,12 +1,11 @@
-import { GraphQLFileLoader } from '@graphql-tools/graphql-file-loader';
-import { loadSchema } from '@graphql-tools/load';
 import { Command, flags } from '@oclif/command';
 import { Input, OutputArgs, OutputFlags } from '@oclif/parser';
-import { GraphQLSchema } from 'graphql';
+import { GraphQLSchema, buildASTSchema } from 'graphql';
 import { dirname, join } from 'path';
 import SDLFirst from '.';
-import { PathConfig } from './config/PathConfig';
 import { SqlResolverConfig } from './SqlResolverWriter';
+import { PathConfig } from './config/PathConfig';
+import { loadSchema } from './loadSchema';
 
 export const defaultBaseline = '.sdlfirst';
 
@@ -40,7 +39,8 @@ export default abstract class CodegenCommand extends Command {
     this.parsedArgs = args;
     this.parsedFlags = flags;
     const directivesPath = join(dirname(dirname(__dirname)), 'sdl', 'directives.graphql');
-    this.inputSchema = await loadSchema([args.file, directivesPath], { loaders: [new GraphQLFileLoader()] });
+    const schemaAst = await loadSchema([args.file, directivesPath]);
+    this.inputSchema = buildASTSchema(schemaAst);
     this.outputConfig.baseDir = this.parsedFlags.baseline;
     this.outputConfig.contextType = this.parsedFlags['context-type'];
     this.outputConfig.contextTypeModule = this.parsedFlags['context-module'];
