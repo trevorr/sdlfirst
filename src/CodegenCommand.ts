@@ -49,8 +49,6 @@ export default abstract class CodegenCommand extends Command {
   async codegen(): Promise<string[]> {
     const sdlFirst = new SDLFirst(this.inputSchema!);
     const files: string[] = [];
-    console.log('Writing types...');
-    files.push(...(await sdlFirst.writeTypes(this.outputConfig)));
     console.log('Writing SQL metadata...');
     files.push(...(await sdlFirst.writeSqlMetadata(this.outputConfig)));
     console.log('Writing SQL tables...');
