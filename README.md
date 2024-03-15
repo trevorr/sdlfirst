@@ -14,7 +14,7 @@ $ npm install -g sdlfirst
 $ sdlfirst COMMAND
 running command...
 $ sdlfirst (-v|--version|version)
-sdlfirst/0.0.1 darwin-arm64 node-v16.20.0
+sdlfirst/0.0.1 darwin-arm64 node-v20.11.1
 $ sdlfirst --help [COMMAND]
 USAGE
   $ sdlfirst COMMAND
