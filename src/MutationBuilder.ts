@@ -427,7 +427,7 @@ export class MutationBuilder {
         (fieldInfo.nodeBackrefField && !createDir) ||
         fieldInfo.nodeBackrefJoin ||
         !nodeType ||
-        !this.isInputNodeType(nodeType)
+        (!this.isInputNodeType(nodeType) && !createDir)
       ) {
         return result;
       }
@@ -617,7 +617,7 @@ export class MutationBuilder {
         (fieldInfo.nodeBackrefField && !updateDir) ||
         fieldInfo.nodeBackrefJoin ||
         !nodeType ||
-        !this.isInputNodeType(nodeType)
+        (!this.isInputNodeType(nodeType) && !updateDir)
       ) {
         return [];
       }
