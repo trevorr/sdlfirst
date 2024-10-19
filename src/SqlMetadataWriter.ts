@@ -106,6 +106,13 @@ export class SqlMetadataWriter {
               propMap[propName] = ts.factory.createStringLiteral(fieldMapping.columns[0].name);
             }
           }
+
+          if (identityTypeInfo.softDeleteField) {
+            const fieldMapping = mapping.fieldMappings.get(identityTypeInfo.softDeleteField);
+            if (fieldMapping && isColumns(fieldMapping) && fieldMapping.columns.length === 1) {
+              propMap['softDeleteColumn'] = ts.factory.createStringLiteral(fieldMapping.columns[0].name);
+            }
+          }
         } else {
           return null;
         }
