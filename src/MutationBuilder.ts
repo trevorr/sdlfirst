@@ -88,6 +88,10 @@ export const DELETE_PERMANENTLY_FLAG = 'deletePermanently';
 const DELETE_PERMANENTLY_DESCRIPTION =
   'Indicates whether the object should be deleted permanently, as opposed to being soft-deleted';
 
+export const RESTORED_FLAG = 'restored';
+const RESTORED_FLAG_DESCRIPTION =
+  'Indicates whether a soft-deleted object with the given identifier was found and restored';
+
 const DEFAULT_MUTATION_TYPE_NAME = 'Mutation';
 
 export class MutationBuilder {
@@ -96,6 +100,7 @@ export class MutationBuilder {
   private readonly createTypes: Map<GraphQLObjectType, GraphQLInputObjectType | null> = new Map();
   private readonly updateTypes: Map<GraphQLObjectType, GraphQLInputObjectType | null> = new Map();
   private readonly deleteTypes: Map<GraphQLObjectType, GraphQLInputObjectType | null> = new Map();
+  private readonly restoreTypes: Map<GraphQLObjectType, GraphQLInputObjectType | null> = new Map();
   private readonly nestedTypes: Map<string, GraphQLInputObjectType | null> = new Map();
 
   constructor(private readonly schema: GraphQLSchema, private readonly analyzer: Analyzer) {
@@ -142,6 +147,7 @@ export class MutationBuilder {
     for (const typeInfo of this.analyzer.getTypeInfos()) {
       if (this.isConcreteEntityTable(typeInfo)) {
         const { type } = typeInfo;
+
         const createName = `create${type.name}`;
         if (!existingSet.has(createName)) {
           const config = this.getMutationConfig(type, 'create');
@@ -185,6 +191,7 @@ export class MutationBuilder {
             ]);
           }
         }
+
         const updateName = `update${type.name}`;
         if (!existingSet.has(updateName)) {
           const config = this.getMutationConfig(type, 'update');
@@ -228,6 +235,7 @@ export class MutationBuilder {
             ]);
           }
         }
+
         const deleteName = `delete${type.name}`;
         if (!existingSet.has(deleteName)) {
           const config = this.getMutationConfig(type, 'delete');
@@ -271,6 +279,54 @@ export class MutationBuilder {
             ]);
           }
         }
+
+        const restoreName = `restore${type.name}`;
+        if (!existingSet.has(restoreName) && typeInfo.softDeleteField) {
+          const config = this.getMutationConfig(type, 'restore');
+          const restoreType = config.input ?? this.getRestoreType(type);
+          if (restoreType) {
+            const args: GraphQLFieldConfigArgumentMap = {
+              input: {
+                type: new GraphQLNonNull(restoreType),
+                description: 'Input object containing the ID of the soft-deleted object to restore',
+              },
+            };
+            if (config.options) {
+              args.options = {
+                type: config.options,
+                description: 'Restore options',
+              };
+            }
+            fields.push([
+              restoreName,
+              {
+                description: `Restores a soft-deleted ${type.name} object`,
+                type: new GraphQLNonNull(
+                  config.payload ??
+                    new GraphQLObjectType({
+                      name: `Restore${type.name}Payload`,
+                      description: `Automatically generated output type for ${this.mutationTypeName}.restore${type.name}`,
+                      fields: {
+                        [CLIENT_MUTATION_ID]: {
+                          type: GraphQLString,
+                          description: CLIENT_MUTATION_ID_PAYLOAD_DESCRIPTION,
+                        },
+                        [RESTORED_FLAG]: {
+                          type: new GraphQLNonNull(GraphQLBoolean),
+                          description: RESTORED_FLAG_DESCRIPTION,
+                        },
+                        [lcFirst(type.name)]: {
+                          type: new GraphQLNonNull(type),
+                          description: `The restored ${type.name} object`,
+                        },
+                      },
+                    })
+                ),
+                args,
+              },
+            ]);
+          }
+        }
       }
     }
     return fields.sort((a, b) => compare(a[0], b[0]));
@@ -280,7 +336,10 @@ export class MutationBuilder {
     return isObjectType(typeInfo.type) && typeInfo.hasIdentity; // not an interface table or nested/1:1 table
   }
 
-  private getMutationConfig(type: GraphQLObjectType, mutation: 'create' | 'update' | 'delete'): MutationConfig {
+  private getMutationConfig(
+    type: GraphQLObjectType,
+    mutation: 'create' | 'update' | 'delete' | 'restore'
+  ): MutationConfig {
     const config: MutationConfig = {};
     const defDir = findDirective(type, this.config.mutationDirective);
     let optionsArg;
@@ -297,6 +356,9 @@ export class MutationBuilder {
         break;
       case 'delete':
         dirName = this.config.deleteDirective;
+        break;
+      case 'restore':
+        dirName = this.config.restoreDirective;
         break;
     }
     const dir = findDirective(type, dirName);
@@ -950,6 +1012,48 @@ export class MutationBuilder {
     }
 
     const description = `Automatically generated input type for ${this.mutationTypeName}.delete${type.name}`;
+    return new GraphQLInputObjectType({
+      name,
+      description,
+      fields: Object.fromEntries(fields),
+      astNode: {
+        kind: Kind.INPUT_OBJECT_TYPE_DEFINITION,
+        name: makeNameNode(name),
+        description: {
+          kind: Kind.STRING,
+          value: description,
+          block: true,
+        },
+        fields: fields.map((f) => f[1].astNode!),
+      },
+    });
+  }
+
+  private getRestoreType(type: GraphQLObjectType): GraphQLInputObjectType | null {
+    let restoreType = this.restoreTypes.get(type);
+    if (restoreType === undefined) {
+      restoreType = this.makeRestoreType(type);
+      this.restoreTypes.set(type, restoreType);
+    }
+    return restoreType;
+  }
+
+  private makeRestoreType(type: GraphQLObjectType): GraphQLInputObjectType | null {
+    const name = `Restore${type.name}Input`;
+    const existingType = this.schema.getType(name);
+    if (existingType) {
+      if (!isInputObjectType(existingType)) {
+        throw new Error(`Generated input type ${name} conflicts with existing type`);
+      }
+      return existingType;
+    }
+
+    const fields: [string, GraphQLInputFieldConfig][] = [
+      makeInputFieldConfigEntry(CLIENT_MUTATION_ID, GraphQLString, CLIENT_MUTATION_ID_INPUT_DESCRIPTION),
+      ...toConfigEntries(this.getIdRefFields(type, true, { descriptionSuffix: ' to restore' })),
+    ];
+
+    const description = `Automatically generated input type for ${this.mutationTypeName}.restore${type.name}`;
     return new GraphQLInputObjectType({
       name,
       description,

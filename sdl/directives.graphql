@@ -203,9 +203,19 @@ directive @delete (
   payload: String
 ) on OBJECT
 
+"""Provides control over the generated restore mutation."""
+directive @restore (
+  """Use the given input object type for the restore argument."""
+  input: String
+  """Use the given input object type for restore options."""
+  options: String
+  """Use the given output object type for the restore result."""
+  payload: String
+) on OBJECT
+
 """
 Provides default configuration for any generated mutations.
-Configuration specified in @create/@update/@delete will take precedence.
+Configuration specified in @create/@update/@delete/@restore will take precedence.
 """
 directive @mutation (
   """Use the given input object type for mutation options."""
