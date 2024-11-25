@@ -32,6 +32,10 @@ export abstract class TsAbstractBlock extends TsNamer {
     this.statements.push(statement);
   }
 
+  public addNewLine(): void {
+    this.statements.push(ts.factory.createExpressionStatement(ts.factory.createIdentifier('\n')));
+  }
+
   public isEmpty(): boolean {
     return this.statements.length === 0;
   }

@@ -108,6 +108,8 @@ export class SqlEnumMappingWriter {
     exportIds.push(toSqlId);
     module.addStatement(this.createExportConst(toSqlId, toSqlInit));
 
+    module.addNewLine();
+
     const fromSqlId = `SqlTo${id}`;
     const fromSqlMappings = valueEntries.map(([key, value]) =>
       ts.factory.createArrayLiteralExpression([valueToNode(value), this.createSchemaEnumValueRef(id, key)])
@@ -122,6 +124,8 @@ export class SqlEnumMappingWriter {
 
     const { discriminatedObjects } = typeInfo;
     if (discriminatedObjects) {
+      module.addNewLine();
+
       const toTypenameId = `SqlTo${id}__typename`;
       const toTypenameMappings = Array.from(discriminatedObjects.entries(), ([key, value]) =>
         ts.factory.createArrayLiteralExpression([
@@ -137,6 +141,19 @@ export class SqlEnumMappingWriter {
       exportIds.push(toTypenameId);
       module.addStatement(this.createExportConst(toTypenameId, toTypenameInit));
     }
+
+    module.addNewLine();
+
+    const sqlIdsId = `${id}Sql`;
+    const sqlIdsProperties = valueEntries.map(([key, value]) =>
+      ts.factory.createPropertyAssignment(pascalCase(key), valueToNode(value))
+    );
+    const sqlIdsInit = ts.factory.createAsExpression(
+      ts.factory.createObjectLiteralExpression(sqlIdsProperties, true),
+      ts.factory.createTypeReferenceNode(ts.factory.createIdentifier('const'))
+    );
+    exportIds.push(sqlIdsId);
+    module.addStatement(this.createExportConst(sqlIdsId, sqlIdsInit));
 
     await module.write(outputFile, this.formatter);
     this.mappings.push({ id, exports: exportIds.sort() });
