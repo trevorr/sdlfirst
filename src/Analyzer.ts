@@ -584,10 +584,14 @@ export class Analyzer {
       if (!fieldInfo.nodeBackrefField && !fieldInfo.nodeBackrefJoin) {
         fieldInfo.nodeBackrefField = this.findNodeBackrefField(type, nodeType);
       }
-    } else if (!nmtmDir && !umtmDir && isTableType(nodeType) && !edgeTypeInfo.extraEdgeFields) {
-      fieldInfo.nodeBackrefField = this.findNodeBackrefField(type, nodeType);
+      // if no backref field or join, assume user will join manually
+      fieldInfo.hasEdgeTable = false;
+    } else {
+      if (!nmtmDir && !umtmDir && isTableType(nodeType) && !edgeTypeInfo.extraEdgeFields) {
+        fieldInfo.nodeBackrefField = this.findNodeBackrefField(type, nodeType);
+      }
+      fieldInfo.hasEdgeTable = !fieldInfo.nodeBackrefField;
     }
-    fieldInfo.hasEdgeTable = !fieldInfo.nodeBackrefField && !fieldInfo.nodeBackrefJoin;
   }
 
   private lookupNodeBackrefField(

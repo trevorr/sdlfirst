@@ -362,11 +362,12 @@ export class SqlSchemaBuilder {
           const fieldMapping: FieldJoin = { field, toTable: nodeTableMapping };
           if (fieldInfo.nodeBackrefField) {
             fieldMapping.toFields = [fieldInfo.nodeBackrefField];
-          } else {
-            fieldMapping.fromFields = fieldInfo.nodeBackrefJoin!.map((pair) => pair[1] || pair[0]);
-            fieldMapping.toFields = fieldInfo.nodeBackrefJoin!.map((pair) => pair[0]);
+            mapping.fieldMappings.set(field, fieldMapping);
+          } else if (fieldInfo.nodeBackrefJoin) {
+            fieldMapping.fromFields = fieldInfo.nodeBackrefJoin.map((pair) => pair[1] || pair[0]);
+            fieldMapping.toFields = fieldInfo.nodeBackrefJoin.map((pair) => pair[0]);
+            mapping.fieldMappings.set(field, fieldMapping);
           }
-          mapping.fieldMappings.set(field, fieldMapping);
           return [];
         }
 
