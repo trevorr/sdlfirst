@@ -181,6 +181,8 @@ directive @create (
   options: String
   """Use the given output object type for the create result."""
   payload: String
+  """Whether to omit the create mutation."""
+  omit: Boolean
 ) on OBJECT
 
 """Provides control over the generated update mutation."""
@@ -191,6 +193,8 @@ directive @update (
   options: String
   """Use the given output object type for the update result."""
   payload: String
+  """Whether to omit the update mutation."""
+  omit: Boolean
 ) on OBJECT
 
 """Provides control over the generated delete mutation."""
@@ -201,6 +205,8 @@ directive @delete (
   options: String
   """Use the given output object type for the delete result."""
   payload: String
+  """Whether to omit the delete mutation."""
+  omit: Boolean
 ) on OBJECT
 
 """Provides control over the generated restore mutation."""
@@ -211,6 +217,8 @@ directive @restore (
   options: String
   """Use the given output object type for the restore result."""
   payload: String
+  """Whether to omit the restore mutation."""
+  omit: Boolean
 ) on OBJECT
 
 """

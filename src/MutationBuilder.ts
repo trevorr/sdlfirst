@@ -2,6 +2,7 @@ import fs from 'fs';
 import {
   ArgumentNode,
   assertScalarType,
+  BooleanValueNode,
   buildASTSchema,
   ConstArgumentNode,
   ConstDirectiveNode,
@@ -76,6 +77,7 @@ interface MutationConfig {
   input?: GraphQLInputObjectType | null;
   options?: GraphQLInputObjectType | null;
   payload?: GraphQLObjectType | null;
+  omit?: boolean;
 }
 
 export const CLIENT_MUTATION_ID = 'clientMutationId';
@@ -151,7 +153,7 @@ export class MutationBuilder {
         const createName = `create${type.name}`;
         if (!existingSet.has(createName)) {
           const config = this.getMutationConfig(type, 'create');
-          const createType = config.input ?? this.getCreateType(type);
+          const createType = config.omit ? null : config.input ?? this.getCreateType(type);
           if (createType) {
             const args: GraphQLFieldConfigArgumentMap = {
               input: {
@@ -195,7 +197,7 @@ export class MutationBuilder {
         const updateName = `update${type.name}`;
         if (!existingSet.has(updateName)) {
           const config = this.getMutationConfig(type, 'update');
-          const updateType = config.input ?? this.getUpdateType(type);
+          const updateType = config.omit ? null : config.input ?? this.getUpdateType(type);
           if (updateType) {
             const args: GraphQLFieldConfigArgumentMap = {
               input: {
@@ -239,7 +241,7 @@ export class MutationBuilder {
         const deleteName = `delete${type.name}`;
         if (!existingSet.has(deleteName)) {
           const config = this.getMutationConfig(type, 'delete');
-          const deleteType = config.input ?? this.getDeleteType(type);
+          const deleteType = config.omit ? null : config.input ?? this.getDeleteType(type);
           if (deleteType) {
             const args: GraphQLFieldConfigArgumentMap = {
               input: {
@@ -283,7 +285,7 @@ export class MutationBuilder {
         const restoreName = `restore${type.name}`;
         if (!existingSet.has(restoreName) && typeInfo.softDeleteField) {
           const config = this.getMutationConfig(type, 'restore');
-          const restoreType = config.input ?? this.getRestoreType(type);
+          const restoreType = config.omit ? null : config.input ?? this.getRestoreType(type);
           if (restoreType) {
             const args: GraphQLFieldConfigArgumentMap = {
               input: {
@@ -364,10 +366,12 @@ export class MutationBuilder {
     const dir = findDirective(type, dirName);
     let inputArg;
     let payloadArg;
+    let omitArg;
     if (dir) {
       inputArg = getDirectiveArgument(dir, 'input');
       optionsArg = getDirectiveArgument(dir, 'options') ?? optionsArg;
       payloadArg = getDirectiveArgument(dir, 'payload');
+      omitArg = getDirectiveArgument(dir, 'omit');
     }
     if (inputArg) {
       config.input = this.findInputObjectType((inputArg.value as StringValueNode).value);
@@ -377,6 +381,9 @@ export class MutationBuilder {
     }
     if (payloadArg) {
       config.payload = this.findObjectType((payloadArg.value as StringValueNode).value);
+    }
+    if (omitArg) {
+      config.omit = (omitArg.value as BooleanValueNode).value;
     }
     return config;
   }
