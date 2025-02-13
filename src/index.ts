@@ -1,4 +1,4 @@
-import { DocumentNode, GraphQLSchema } from 'graphql';
+import { buildASTSchema, DocumentNode, GraphQLSchema, parse } from 'graphql';
 import path from 'path';
 import { Analyzer } from './Analyzer';
 import { AudienceFilter } from './AudienceFilter';
@@ -27,7 +27,13 @@ export default class SDLFirst {
   }
 
   public filterAudience(audience: string): GraphQLSchema {
-    return (this.schema = new AudienceFilter(this.schema, this.directiveConfig, audience).filterAudience());
+    // Filtering is vastly simpler using the AST, as opposed to the schema, so
+    // unfortunately we have to print and parse the schema to an AST, filter it,
+    // and then rebuild the schema. Eventually, all operations should be
+    // AST-based, and then the conversions can be removed.
+    const document = parse(printSchemaUsingAst(this.schema));
+    const filtered = new AudienceFilter(document, this.directiveConfig, audience).filterAudience();
+    return (this.schema = buildASTSchema(filtered));
   }
 
   public addMutations(): GraphQLSchema {
