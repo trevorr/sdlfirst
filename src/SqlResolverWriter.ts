@@ -1978,7 +1978,6 @@ export class SqlResolverWriter {
       ts.factory.createMethodDeclaration(
         undefined,
         undefined,
-        undefined,
         '__resolveType',
         undefined,
         undefined,
