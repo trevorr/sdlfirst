@@ -2100,9 +2100,17 @@ function getRangeValidator(
           method
         ),
         undefined,
-        params.map((v) => ts.factory.createNumericLiteral(v))
+        params.map(createNumericLiteral)
       );
     }
   }
   return expr;
+}
+
+function createNumericLiteral(str: string): ts.Expression {
+  const n = parseFloat(str);
+  if (n < 0) {
+    return ts.factory.createPrefixUnaryExpression(ts.SyntaxKind.MinusToken, ts.factory.createNumericLiteral(-n));
+  }
+  return ts.factory.createNumericLiteral(str);
 }
