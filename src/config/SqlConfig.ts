@@ -70,7 +70,7 @@ export const defaultConfig: SqlConfig = {
   internalIdSqlType: undefined,
 
   tableIdSuffix: '_kind',
-  tableIdSqlType: 'varchar(2)',
+  tableIdSqlType: 'varchar(3)',
   tableIdCharset: 'utf8mb4',
   tableIdCollate: 'utf8mb4_bin',
 
